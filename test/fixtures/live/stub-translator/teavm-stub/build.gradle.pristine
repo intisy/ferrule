@@ -9,7 +9,6 @@ dependencies {
     // teavm transpiles :ir's + :stub's pure types -- no gson/net/nio/etc, matching their own
     // zero-dependency policy.
     // ferrule:begin
-    githubImplementation "intisy-ai:basekit:5.0.0:ir"
     // ferrule:end
     implementation project(":stub")
     // SOURCE-retention, so nothing here reaches the bundle. The processor jar is a release asset and

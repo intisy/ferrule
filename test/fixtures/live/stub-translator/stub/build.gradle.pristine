@@ -2,6 +2,5 @@
 // :ir. Depends on :ir for the Translator interface and the IR types.
 dependencies {
     // ferrule:begin
-    githubImplementation "intisy-ai:basekit:5.0.0:ir"
     // ferrule:end
 }
