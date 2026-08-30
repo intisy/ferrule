@@ -4,6 +4,7 @@
 #include "types.h"
 
 int fr_project_read(const char *file_path, fr_project *out, fr_error *err);
+int fr_project_parse(const char *text, const char *origin, fr_project *out, fr_error *err);
 int fr_manifest_read(const char *file_path, fr_manifest *out, fr_error *err);
 void fr_project_free(fr_project *project);
 void fr_manifest_free(fr_manifest *manifest);

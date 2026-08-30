@@ -2,6 +2,7 @@
 
 #include "error.h"
 #include "jsonx.h"
+#include "region.h"
 #include "semver.h"
 
 #include <stdlib.h>
@@ -261,17 +262,29 @@ static int manifest_from_json(const cJSON *root, const char *file_path, fr_manif
     return FR_OK;
 }
 
-int fr_project_read(const char *file_path, fr_project *out, fr_error *err) {
+int fr_project_parse(const char *text, const char *origin, fr_project *out, fr_error *err) {
     memset(out, 0, sizeof *out);
-    cJSON *root = NULL;
-    if (fr_json_read_file(file_path, &root, err) != FR_OK) return FR_ERR;
-    if (project_from_json(root, file_path, out, err) != FR_OK) {
+    cJSON *root = cJSON_Parse(text);
+    if (root == NULL) {
+        fr_error_set(err, "\"%s\" is not valid json", origin);
+        return FR_ERR;
+    }
+    if (project_from_json(root, origin, out, err) != FR_OK) {
         fr_project_free(out);
         cJSON_Delete(root);
         return FR_ERR;
     }
     out->document = root;
     return FR_OK;
+}
+
+int fr_project_read(const char *file_path, fr_project *out, fr_error *err) {
+    memset(out, 0, sizeof *out);
+    char *text = NULL;
+    if (fr_file_read_text(file_path, &text, err) != FR_OK) return FR_ERR;
+    int result = fr_project_parse(text, file_path, out, err);
+    free(text);
+    return result;
 }
 
 int fr_manifest_read(const char *file_path, fr_manifest *out, fr_error *err) {
