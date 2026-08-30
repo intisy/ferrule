@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "project": "intisy-ai/basekit",
+  "version": "5.0.0",
+  "modules": {
+    "contracts": {
+      "requires": [],
+      "gradle": { "coordinate": "intisy-ai:basekit:5.0.0:contracts" }
+    },
+    "ir": {
+      "requires": ["contracts"],
+      "gradle": { "coordinate": "intisy-ai:basekit:5.0.0:ir" }
+    },
+    "loader": {
+      "requires": []
+    }
+  }
+}

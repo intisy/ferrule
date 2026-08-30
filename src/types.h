@@ -12,4 +12,49 @@ typedef enum { FR_RANGE_EXACT, FR_RANGE_CARET, FR_RANGE_TILDE } fr_range_kind;
 
 typedef struct { fr_range_kind kind; fr_version base; } fr_range;
 
+#include <stddef.h>
+
+typedef struct {
+    char *name;
+    char **requires;
+    size_t requires_count;
+    char *gradle_coordinate;
+} fr_module;
+
+typedef struct {
+    char *project;
+    fr_version version;
+    fr_module *modules;
+    size_t module_count;
+} fr_project;
+
+typedef struct {
+    char *project;
+    fr_range range;
+    char **modules;
+    size_t module_count;
+} fr_dependency;
+
+typedef struct {
+    char *id;
+    char *language;
+    char *file;
+    char *configuration;
+    fr_dependency *dependencies;
+    size_t dependency_count;
+} fr_consumer;
+
+typedef struct {
+    char *project;
+    char *path;
+} fr_source;
+
+typedef struct {
+    fr_project self;
+    fr_source *sources;
+    size_t source_count;
+    fr_consumer *consumers;
+    size_t consumer_count;
+} fr_manifest;
+
 #endif

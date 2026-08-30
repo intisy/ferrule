@@ -1,0 +1,12 @@
+#ifndef FERRULE_MANIFEST_H
+#define FERRULE_MANIFEST_H
+
+#include "types.h"
+
+int fr_project_read(const char *file_path, fr_project *out, fr_error *err);
+int fr_manifest_read(const char *file_path, fr_manifest *out, fr_error *err);
+void fr_project_free(fr_project *project);
+void fr_manifest_free(fr_manifest *manifest);
+const fr_module *fr_project_module(const fr_project *project, const char *name);
+
+#endif

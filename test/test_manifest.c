@@ -1,0 +1,81 @@
+#include "greatest.h"
+#include "manifest.h"
+
+#include <string.h>
+
+TEST reads_a_producer(void) {
+    fr_project project; fr_error err;
+    ASSERT_EQ(FR_OK, fr_project_read("test/fixtures/producer/ferrule.json", &project, &err));
+    ASSERT_STR_EQ("intisy-ai/basekit", project.project);
+    ASSERT_EQ(5, project.version.major);
+    ASSERT_EQ(3, (int) project.module_count);
+    fr_project_free(&project);
+    PASS();
+}
+
+TEST finds_a_module_and_its_requires(void) {
+    fr_project project; fr_error err;
+    fr_project_read("test/fixtures/producer/ferrule.json", &project, &err);
+    const fr_module *ir = fr_project_module(&project, "ir");
+    ASSERT(ir != NULL);
+    ASSERT_EQ(1, (int) ir->requires_count);
+    ASSERT_STR_EQ("contracts", ir->requires[0]);
+    ASSERT_STR_EQ("intisy-ai:basekit:5.0.0:ir", ir->gradle_coordinate);
+    fr_project_free(&project);
+    PASS();
+}
+
+TEST leaves_an_absent_language_block_null(void) {
+    fr_project project; fr_error err;
+    fr_project_read("test/fixtures/producer/ferrule.json", &project, &err);
+    const fr_module *loader = fr_project_module(&project, "loader");
+    ASSERT(loader != NULL);
+    ASSERT(loader->gradle_coordinate == NULL);
+    fr_project_free(&project);
+    PASS();
+}
+
+TEST returns_null_for_an_unknown_module(void) {
+    fr_project project; fr_error err;
+    fr_project_read("test/fixtures/producer/ferrule.json", &project, &err);
+    ASSERT(fr_project_module(&project, "nope") == NULL);
+    fr_project_free(&project);
+    PASS();
+}
+
+TEST reads_a_consumer(void) {
+    fr_manifest manifest; fr_error err;
+    ASSERT_EQ(FR_OK, fr_manifest_read("test/fixtures/consumer/ferrule.json", &manifest, &err));
+    ASSERT_EQ(1, (int) manifest.source_count);
+    ASSERT_STR_EQ("intisy-ai/basekit", manifest.sources[0].project);
+    ASSERT_STR_EQ("../producer", manifest.sources[0].path);
+    ASSERT_EQ(1, (int) manifest.consumer_count);
+    ASSERT_STR_EQ("stub", manifest.consumers[0].id);
+    ASSERT_STR_EQ("gradle", manifest.consumers[0].language);
+    ASSERT_STR_EQ("githubImplementation", manifest.consumers[0].configuration);
+    ASSERT_EQ(1, (int) manifest.consumers[0].dependency_count);
+    ASSERT_EQ(FR_RANGE_CARET, manifest.consumers[0].dependencies[0].range.kind);
+    ASSERT_STR_EQ("ir", manifest.consumers[0].dependencies[0].modules[0]);
+    fr_manifest_free(&manifest);
+    PASS();
+}
+
+TEST rejects_an_unknown_schema(void) {
+    fr_project project; fr_error err;
+    ASSERT_EQ(FR_ERR, fr_project_read("test/fixtures/bad-schema/ferrule.json", &project, &err));
+    ASSERT(strstr(err.message, "schema") != NULL);
+    PASS();
+}
+
+GREATEST_MAIN_DEFS();
+
+int main(int argc, char **argv) {
+    GREATEST_MAIN_BEGIN();
+    RUN_TEST(reads_a_producer);
+    RUN_TEST(finds_a_module_and_its_requires);
+    RUN_TEST(leaves_an_absent_language_block_null);
+    RUN_TEST(returns_null_for_an_unknown_module);
+    RUN_TEST(reads_a_consumer);
+    RUN_TEST(rejects_an_unknown_schema);
+    GREATEST_MAIN_END();
+}
