@@ -36,6 +36,11 @@ int fr_json_read_file(const char *path, cJSON **out, fr_error *err) {
     }
     size_t read = fread(buffer, 1, (size_t) size, file);
     fclose(file);
+    if (read != (size_t) size) {
+        free(buffer);
+        fr_error_set(err, "cannot read \"%s\"", path);
+        return FR_ERR;
+    }
     buffer[read] = '\0';
 
     cJSON *root = cJSON_Parse(buffer);

@@ -69,6 +69,26 @@ TEST fails_when_the_end_marker_precedes_the_begin_marker(void) {
     PASS();
 }
 
+TEST fails_when_both_markers_share_one_line(void) {
+    const char *original = "dependencies {\n    // ferrule:begin // ferrule:end\n}\n";
+    char *out = NULL; fr_error err;
+    ASSERT_EQ(FR_ERR, fr_region_replace(original, "// ferrule:begin", "// ferrule:end", "X", &out, &err));
+    ASSERT(out == NULL);
+    ASSERT(strstr(err.message, "ferrule:begin") != NULL);
+    ASSERT(strstr(err.message, "ferrule:end") != NULL);
+    PASS();
+}
+
+TEST fails_when_the_replacement_carries_a_marker(void) {
+    const char *original = "// ferrule:begin\nold\n// ferrule:end\n";
+    char *out = NULL; fr_error err;
+    ASSERT_EQ(FR_ERR, fr_region_replace(original, "// ferrule:begin", "// ferrule:end",
+                                        "line\n// ferrule:end\nsmuggled", &out, &err));
+    ASSERT(out == NULL);
+    ASSERT(strstr(err.message, "ferrule:end") != NULL);
+    PASS();
+}
+
 TEST joins_generated_lines_with_the_files_own_crlf_terminator(void) {
     const char *original =
         "dependencies {\r\n"
@@ -119,6 +139,8 @@ int main(int argc, char **argv) {
     RUN_TEST(fails_when_the_begin_marker_is_absent);
     RUN_TEST(fails_when_the_end_marker_is_absent);
     RUN_TEST(fails_when_the_end_marker_precedes_the_begin_marker);
+    RUN_TEST(fails_when_both_markers_share_one_line);
+    RUN_TEST(fails_when_the_replacement_carries_a_marker);
     RUN_TEST(joins_generated_lines_with_the_files_own_crlf_terminator);
     RUN_TEST(trims_one_trailing_newline_from_the_replacement);
     GREATEST_MAIN_END();

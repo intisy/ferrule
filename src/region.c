@@ -48,6 +48,15 @@ int fr_region_replace(const char *original, const char *begin_marker, const char
                       const char *replacement, char **out, fr_error *err) {
     *out = NULL;
 
+    if (strstr(replacement, begin_marker) != NULL) {
+        fr_error_set(err, "replacement contains the region marker \"%s\"", begin_marker);
+        return FR_ERR;
+    }
+    if (strstr(replacement, end_marker) != NULL) {
+        fr_error_set(err, "replacement contains the region marker \"%s\"", end_marker);
+        return FR_ERR;
+    }
+
     const char *begin_pos = strstr(original, begin_marker);
     if (begin_pos == NULL) {
         fr_error_set(err, "region marker \"%s\" not found", begin_marker);
@@ -73,6 +82,10 @@ int fr_region_replace(const char *original, const char *begin_marker, const char
     size_t terminator_len = uses_crlf ? 2 : 1;
 
     const char *suffix_start = line_start(original, end_pos);
+    if (suffix_start < prefix_end) {
+        fr_error_set(err, "region markers \"%s\" and \"%s\" share one line", begin_marker, end_marker);
+        return FR_ERR;
+    }
     size_t suffix_len = strlen(suffix_start);
 
     size_t replacement_len = trim_one_trailing_terminator(replacement, strlen(replacement));
@@ -119,6 +132,11 @@ int fr_file_read_text(const char *path, char **out, fr_error *err) {
     }
     size_t read = fread(buffer, 1, (size_t) size, file);
     fclose(file);
+    if (read != (size_t) size) {
+        free(buffer);
+        fr_error_set(err, "cannot read \"%s\"", path);
+        return FR_ERR;
+    }
     buffer[read] = '\0';
 
     *out = buffer;
