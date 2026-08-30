@@ -35,7 +35,7 @@ static char *dup_cstr(const char *text) {
     return copy;
 }
 
-static int host_equal(const char *a, const char *b) {
+static int ci_equal(const char *a, const char *b) {
     while (*a != '\0' && *b != '\0') {
         if (tolower((unsigned char) *a) != tolower((unsigned char) *b)) return 0;
         a++;
@@ -48,31 +48,62 @@ static int is_redirect_status(long status) {
     return status == 301 || status == 302 || status == 303 || status == 307 || status == 308;
 }
 
-static char *url_host(const char *url, fr_error *err) {
+typedef struct { char *scheme; char *host; char *port; } fr_origin;
+
+static void origin_free(fr_origin *origin) {
+    free(origin->scheme);
+    free(origin->host);
+    free(origin->port);
+}
+
+static int origin_equal(const fr_origin *a, const fr_origin *b) {
+    return ci_equal(a->scheme, b->scheme) && ci_equal(a->host, b->host) && strcmp(a->port, b->port) == 0;
+}
+
+/* CURLU_DEFAULT_PORT fills in the scheme's default port when the URL omits
+   one, so "https://host/" and "https://host:443/" normalise to the same
+   origin instead of comparing unequal. */
+static int url_origin(const char *url, fr_origin *out, fr_error *err) {
+    memset(out, 0, sizeof *out);
+
     CURLU *parsed = curl_url();
     if (parsed == NULL) {
         fr_error_set(err, "out of memory parsing %s", url);
-        return NULL;
+        return FR_ERR;
     }
+
+    char *scheme = NULL;
     char *host = NULL;
-    if (curl_url_set(parsed, CURLUPART_URL, url, 0) != CURLUE_OK ||
-        curl_url_get(parsed, CURLUPART_HOST, &host, 0) != CURLUE_OK) {
-        fr_error_set(err, "could not parse the host of %s", url);
-        curl_url_cleanup(parsed);
-        return NULL;
+    char *port = NULL;
+    int ok = curl_url_set(parsed, CURLUPART_URL, url, 0) == CURLUE_OK &&
+             curl_url_get(parsed, CURLUPART_SCHEME, &scheme, 0) == CURLUE_OK &&
+             curl_url_get(parsed, CURLUPART_HOST, &host, 0) == CURLUE_OK &&
+             curl_url_get(parsed, CURLUPART_PORT, &port, CURLU_DEFAULT_PORT) == CURLUE_OK;
+    if (!ok) {
+        fr_error_set(err, "could not parse the origin of %s", url);
+    } else {
+        out->scheme = dup_cstr(scheme);
+        out->host = dup_cstr(host);
+        out->port = dup_cstr(port);
+        if (out->scheme == NULL || out->host == NULL || out->port == NULL) {
+            fr_error_set(err, "out of memory parsing %s", url);
+            ok = 0;
+        }
     }
-    char *owned = dup_cstr(host);
+
+    curl_free(scheme);
     curl_free(host);
+    curl_free(port);
     curl_url_cleanup(parsed);
-    if (owned == NULL) fr_error_set(err, "out of memory parsing %s", url);
-    return owned;
+    if (!ok) { origin_free(out); return FR_ERR; }
+    return FR_OK;
 }
 
 /* Redirects are driven manually (CURLOPT_FOLLOWLOCATION off) rather than by
    relying on CURLOPT_UNRESTRICTED_AUTH's default: that option only strips
    Authorization and Cookie, not every caller-supplied header that rule 2
    requires dropped on a redirect that changes host. */
-static fetch_outcome fetch_once(const char *current_url, char **original_host,
+static fetch_outcome fetch_once(const char *current_url, fr_origin *original,
                                 const fr_http_header *headers, size_t header_count,
                                 char **out_body, size_t *out_length,
                                 char **out_redirect_url, fr_error *err) {
@@ -83,9 +114,10 @@ static fetch_outcome fetch_once(const char *current_url, char **original_host,
     struct curl_slist *list = NULL;
     CURL *handle = NULL;
 
-    char *host = url_host(current_url, err);
-    if (host == NULL) return FETCH_ERROR;
-    if (*original_host == NULL) *original_host = host;
+    fr_origin current;
+    if (url_origin(current_url, &current, err) != FR_OK) return FETCH_ERROR;
+    int is_first = (original->scheme == NULL);
+    if (is_first) *original = current;
 
     handle = curl_easy_init();
     if (handle == NULL) {
@@ -93,7 +125,7 @@ static fetch_outcome fetch_once(const char *current_url, char **original_host,
         goto cleanup;
     }
 
-    if (host_equal(*original_host, host)) {
+    if (origin_equal(original, &current)) {
         for (size_t index = 0; index < header_count; index++) {
             char line[1024];
             int wanted = snprintf(line, sizeof line, "%s: %s", headers[index].name, headers[index].value);
@@ -118,6 +150,10 @@ static fetch_outcome fetch_once(const char *current_url, char **original_host,
     curl_easy_setopt(handle, CURLOPT_USERAGENT, "ferrule");
     curl_easy_setopt(handle, CURLOPT_WRITEFUNCTION, append);
     curl_easy_setopt(handle, CURLOPT_WRITEDATA, &buffer);
+    curl_easy_setopt(handle, CURLOPT_CONNECTTIMEOUT, 60L);
+    curl_easy_setopt(handle, CURLOPT_TIMEOUT, 30L);
+    curl_easy_setopt(handle, CURLOPT_PROTOCOLS_STR, "http,https");
+    curl_easy_setopt(handle, CURLOPT_REDIR_PROTOCOLS_STR, "http,https");
     if (list != NULL) curl_easy_setopt(handle, CURLOPT_HTTPHEADER, list);
 
     CURLcode result = curl_easy_perform(handle);
@@ -168,7 +204,7 @@ static fetch_outcome fetch_once(const char *current_url, char **original_host,
 cleanup:
     curl_slist_free_all(list);
     if (handle != NULL) curl_easy_cleanup(handle);
-    if (host != *original_host) free(host);
+    if (!is_first) origin_free(&current);
     return outcome;
 }
 
@@ -180,12 +216,13 @@ int fr_http_backend_get(const char *url, const fr_http_header *headers, size_t h
         return FR_ERR;
     }
 
-    char *original_host = NULL;
+    fr_origin original;
+    memset(&original, 0, sizeof original);
     fetch_outcome result;
     int attempt = 0;
     do {
         char *redirect_url = NULL;
-        result = fetch_once(current_url, &original_host, headers, header_count,
+        result = fetch_once(current_url, &original, headers, header_count,
                             out_body, out_length, &redirect_url, err);
         if (result == FETCH_REDIRECT) {
             free(current_url);
@@ -199,7 +236,7 @@ int fr_http_backend_get(const char *url, const fr_http_header *headers, size_t h
     }
 
     free(current_url);
-    free(original_host);
+    origin_free(&original);
     return result == FETCH_DONE ? FR_OK : FR_ERR;
 }
 

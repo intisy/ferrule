@@ -38,13 +38,13 @@ static int is_redirect_status(DWORD status) {
     return status == 301 || status == 302 || status == 303 || status == 307 || status == 308;
 }
 
-typedef struct { wchar_t *host; INTERNET_PORT port; } fr_origin;
+typedef struct { wchar_t *host; INTERNET_PORT port; INTERNET_SCHEME scheme; } fr_origin;
 
 /* One attempt at one URL: connects, sends the request with the caller's
-   headers attached only when the host and port still match the very first
-   request (rule 2), and either returns the body, a redirect location, or an
-   error. Handles are per attempt because the target host can change between
-   them. */
+   headers attached only when the scheme, host and port still match the very
+   first request (rule 2), and either returns the body, a redirect location,
+   or an error. Handles are per attempt because the target host can change
+   between them. */
 static fetch_outcome fetch_once(const char *current_url, fr_origin *origin,
                                 const fr_http_header *headers, size_t header_count,
                                 char **out_body, size_t *out_length,
@@ -87,6 +87,7 @@ static fetch_outcome fetch_once(const char *current_url, fr_origin *origin,
     if (origin->host == NULL) {
         origin->host = host;
         origin->port = components.nPort;
+        origin->scheme = components.nScheme;
     }
 
     session = WinHttpOpen(L"ferrule", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
@@ -116,7 +117,8 @@ static fetch_outcome fetch_once(const char *current_url, fr_origin *origin,
         goto cleanup;
     }
 
-    if (_wcsicmp(origin->host, host) == 0 && origin->port == components.nPort) {
+    if (origin->scheme == components.nScheme && origin->port == components.nPort &&
+        _wcsicmp(origin->host, host) == 0) {
         for (size_t index = 0; index < header_count; index++) {
             char line[1024];
             int wanted = snprintf(line, sizeof line, "%s: %s", headers[index].name, headers[index].value);
@@ -245,6 +247,7 @@ int fr_http_backend_get(const char *url, const fr_http_header *headers, size_t h
     fr_origin origin;
     origin.host = NULL;
     origin.port = 0;
+    origin.scheme = INTERNET_SCHEME_HTTP;
     fetch_outcome result;
     int attempt = 0;
     do {
