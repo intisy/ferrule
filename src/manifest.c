@@ -22,7 +22,6 @@ static void module_free(fr_module *module) {
     if (module == NULL) return;
     free(module->name);
     fr_string_array_free(module->requires, module->requires_count);
-    free(module->gradle_coordinate);
 }
 
 static void source_free(fr_source *source) {
@@ -71,18 +70,7 @@ static int read_module(const cJSON *entry, const char *name, fr_module *out, fr_
     if (fr_json_array_of_strings(entry, "requires", path, &out->requires, &out->requires_count, err) != FR_OK) {
         return FR_ERR;
     }
-    const cJSON *gradle = cJSON_GetObjectItemCaseSensitive(entry, "gradle");
-    if (gradle != NULL) {
-        char gradle_path[288];
-        snprintf(gradle_path, sizeof gradle_path, "%s.gradle", path);
-        const char *coordinate = NULL;
-        if (fr_json_string(gradle, "coordinate", gradle_path, &coordinate, err) != FR_OK) return FR_ERR;
-        out->gradle_coordinate = duplicate(coordinate);
-        if (out->gradle_coordinate == NULL) {
-            fr_error_set(err, "out of memory reading %s.coordinate", gradle_path);
-            return FR_ERR;
-        }
-    }
+    out->blocks = entry;
     return FR_OK;
 }
 

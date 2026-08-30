@@ -1,18 +1,31 @@
 #include "greatest.h"
 #include "lang_gradle.h"
 
+#include "cJSON.h"
+
 #include <stdlib.h>
 #include <string.h>
 
 static fr_resolved two_modules[2];
 
+static cJSON *block_with_coordinate(const char *coordinate) {
+    cJSON *block = cJSON_CreateObject();
+    cJSON_AddStringToObject(block, "coordinate", coordinate);
+    return block;
+}
+
 static void setup(void) {
     two_modules[0].project = "intisy-ai/basekit";
     two_modules[0].module = "contracts";
-    two_modules[0].gradle_coordinate = "intisy-ai:basekit:5.0.0:contracts";
+    two_modules[0].block = block_with_coordinate("intisy-ai:basekit:5.0.0:contracts");
     two_modules[1].project = "intisy-ai/basekit";
     two_modules[1].module = "ir";
-    two_modules[1].gradle_coordinate = "intisy-ai:basekit:5.0.0:ir";
+    two_modules[1].block = block_with_coordinate("intisy-ai:basekit:5.0.0:ir");
+}
+
+static void teardown(void) {
+    cJSON_Delete(two_modules[0].block);
+    cJSON_Delete(two_modules[1].block);
 }
 
 TEST renders_one_line_per_module_in_order(void) {
@@ -26,6 +39,7 @@ TEST renders_one_line_per_module_in_order(void) {
         "githubImplementation \"intisy-ai:basekit:5.0.0:contracts\"\n"
         "githubImplementation \"intisy-ai:basekit:5.0.0:ir\"", text);
     free(text);
+    teardown();
     PASS();
 }
 

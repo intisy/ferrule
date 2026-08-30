@@ -40,3 +40,7 @@ foreach(test_file ${FERRULE_TESTS})
     add_test(NAME ${test_name} COMMAND ${test_name})
     set_tests_properties(${test_name} PROPERTIES WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
 endforeach()
+
+add_test(NAME agnostic_core COMMAND ${CMAKE_COMMAND}
+         -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+         -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_agnostic.cmake)

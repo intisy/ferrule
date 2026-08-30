@@ -4,6 +4,8 @@
 #include "manifest.h"
 #include "semver.h"
 
+#include "cJSON.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -71,7 +73,7 @@ static int builder_contains(const fr_resolved_builder *builder, const char *proj
 }
 
 static int builder_push(fr_resolved_builder *builder, const fr_project *project,
-                        const fr_module *module, const char *coordinate, fr_error *err) {
+                        const fr_module *module, const cJSON *block, fr_error *err) {
     if (builder_contains(builder, project->project, module->name)) return FR_OK;
     if (builder->count == builder->capacity) {
         size_t capacity = builder->capacity == 0 ? 8 : builder->capacity * 2;
@@ -88,11 +90,11 @@ static int builder_push(fr_resolved_builder *builder, const fr_project *project,
     memset(&entry, 0, sizeof entry);
     entry.project = duplicate(project->project);
     entry.module = duplicate(module->name);
-    entry.gradle_coordinate = duplicate(coordinate);
-    if (entry.project == NULL || entry.module == NULL || entry.gradle_coordinate == NULL) {
+    entry.block = cJSON_Duplicate(block, 1);
+    if (entry.project == NULL || entry.module == NULL || entry.block == NULL) {
         free(entry.project);
         free(entry.module);
-        free(entry.gradle_coordinate);
+        cJSON_Delete(entry.block);
         fr_error_set(err, "out of memory resolving module \"%s\"", module->name);
         return FR_ERR;
     }
@@ -103,11 +105,6 @@ static int builder_push(fr_resolved_builder *builder, const fr_project *project,
 static int resolve_dependency(const fr_dependency *dependency, const fr_manifest *manifest,
                               const char *manifest_dir, const fr_registry *registry,
                               const char *language, fr_resolved_builder *builder, fr_error *err) {
-    if (strcmp(language, "gradle") != 0) {
-        fr_error_set(err, "language \"%s\" is not supported", language);
-        return FR_ERR;
-    }
-
     const fr_source *entry = fr_manifest_source(manifest, dependency->project);
     if (entry == NULL) {
         fr_error_set(err, "sources has no entry for \"%s\"", dependency->project);
@@ -164,15 +161,16 @@ static int resolve_dependency(const fr_dependency *dependency, const fr_manifest
             return FR_ERR;
         }
 
-        const char *coordinate = module->gradle_coordinate;
-        if (coordinate == NULL) {
-            fr_error_set(err, "module \"%s\" has no \"%s\" coordinate", name, language);
+        const cJSON *block = cJSON_GetObjectItemCaseSensitive(module->blocks, language);
+        if (!cJSON_IsObject(block)) {
+            fr_error_set(err, "module \"%s\" of \"%s\" has no \"%s\" block",
+                        name, dependency->project, language);
             free(queue.items);
             fr_project_free(&project);
             return FR_ERR;
         }
 
-        if (builder_push(builder, &project, module, coordinate, err) != FR_OK) {
+        if (builder_push(builder, &project, module, block, err) != FR_OK) {
             free(queue.items);
             fr_project_free(&project);
             return FR_ERR;
@@ -229,7 +227,7 @@ void fr_resolved_free(fr_resolved *items, size_t count) {
     for (size_t index = 0; index < count; index++) {
         free(items[index].project);
         free(items[index].module);
-        free(items[index].gradle_coordinate);
+        cJSON_Delete(items[index].block);
     }
     free(items);
 }

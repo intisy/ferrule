@@ -9,7 +9,7 @@
 struct fr_resolved {
     char *project;
     char *module;
-    char *gradle_coordinate;
+    struct cJSON *block;
 };
 
 int fr_resolve_consumer(const fr_consumer *consumer, const fr_manifest *manifest,

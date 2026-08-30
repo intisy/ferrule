@@ -22,7 +22,10 @@ TEST finds_a_module_and_its_requires(void) {
     ASSERT(ir != NULL);
     ASSERT_EQ(1, (int) ir->requires_count);
     ASSERT_STR_EQ("contracts", ir->requires[0]);
-    ASSERT_STR_EQ("intisy-ai:basekit:5.0.0:ir", ir->gradle_coordinate);
+    const cJSON *gradle = cJSON_GetObjectItemCaseSensitive(ir->blocks, "gradle");
+    ASSERT(cJSON_IsObject(gradle));
+    const cJSON *coordinate = cJSON_GetObjectItemCaseSensitive(gradle, "coordinate");
+    ASSERT_STR_EQ("intisy-ai:basekit:5.0.0:ir", coordinate->valuestring);
     fr_project_free(&project);
     PASS();
 }
@@ -32,7 +35,7 @@ TEST leaves_an_absent_language_block_null(void) {
     fr_project_read("test/fixtures/producer/ferrule.json", &project, &err);
     const fr_module *loader = fr_project_module(&project, "loader");
     ASSERT(loader != NULL);
-    ASSERT(loader->gradle_coordinate == NULL);
+    ASSERT(cJSON_GetObjectItemCaseSensitive(loader->blocks, "gradle") == NULL);
     fr_project_free(&project);
     PASS();
 }

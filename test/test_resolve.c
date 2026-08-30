@@ -57,9 +57,30 @@ TEST pulls_in_transitive_requires(void) {
     ASSERT_EQ(2, (int) count);
     ASSERT_STR_EQ("contracts", items[0].module);
     ASSERT_STR_EQ("ir", items[1].module);
-    ASSERT_STR_EQ("intisy-ai:basekit:5.0.0:contracts", items[0].gradle_coordinate);
+    const cJSON *coordinate = cJSON_GetObjectItemCaseSensitive(items[0].block, "coordinate");
+    ASSERT_STR_EQ("intisy-ai:basekit:5.0.0:contracts", coordinate->valuestring);
 
     fr_resolved_free(items, count);
+    fr_registry_destroy(registry);
+    fr_manifest_free(&manifest);
+    PASS();
+}
+
+TEST reports_a_module_that_has_no_block_for_the_language(void) {
+    fr_manifest manifest;
+    fr_error err;
+    ASSERT_EQ(FR_OK, fr_manifest_read("test/fixtures/consumer/ferrule-no-language-block.json", &manifest, &err));
+
+    fr_registry *registry = fr_registry_create();
+    ASSERT_EQ(FR_OK, fr_registry_add_source(registry, &FR_SOURCE_PATH, &err));
+
+    fr_resolved *resolved = NULL;
+    size_t count = 0;
+    ASSERT_EQ(FR_ERR, fr_resolve_consumer(&manifest.consumers[0], &manifest, "test/fixtures/consumer",
+                                          registry, &resolved, &count, &err));
+    ASSERT(strstr(err.message, "\"ir\"") != NULL);
+    ASSERT(strstr(err.message, "\"npm\"") != NULL);
+
     fr_registry_destroy(registry);
     fr_manifest_free(&manifest);
     PASS();
@@ -144,16 +165,17 @@ TEST rejects_a_project_that_does_not_match_its_source(void) {
     PASS();
 }
 
-TEST rejects_an_unsupported_language_even_with_no_modules(void) {
+TEST resolves_no_modules_for_any_language_without_looking_up_a_block(void) {
     fr_manifest manifest; fr_error err;
     fr_manifest_read("test/fixtures/consumer-badlanguage/ferrule.json", &manifest, &err);
     fr_registry *registry = with_path_source();
 
     fr_resolved *items = NULL; size_t count = 0;
-    ASSERT_EQ(FR_ERR, fr_resolve_consumer(&manifest.consumers[0], &manifest,
-                                          "test/fixtures/consumer-badlanguage", registry, &items, &count, &err));
-    ASSERT(strstr(err.message, "npm") != NULL);
+    ASSERT_EQ(FR_OK, fr_resolve_consumer(&manifest.consumers[0], &manifest,
+                                         "test/fixtures/consumer-badlanguage", registry, &items, &count, &err));
+    ASSERT_EQ(0, (int) count);
 
+    fr_resolved_free(items, count);
     fr_registry_destroy(registry);
     fr_manifest_free(&manifest);
     PASS();
@@ -165,11 +187,12 @@ int main(int argc, char **argv) {
     GREATEST_MAIN_BEGIN();
     RUN_TEST(hands_the_source_plugin_its_own_state);
     RUN_TEST(pulls_in_transitive_requires);
+    RUN_TEST(reports_a_module_that_has_no_block_for_the_language);
     RUN_TEST(deduplicates_a_module_reached_twice);
     RUN_TEST(rejects_a_version_outside_the_range);
     RUN_TEST(reports_a_module_absent_from_the_language);
     RUN_TEST(reports_an_unknown_module_by_name);
     RUN_TEST(rejects_a_project_that_does_not_match_its_source);
-    RUN_TEST(rejects_an_unsupported_language_even_with_no_modules);
+    RUN_TEST(resolves_no_modules_for_any_language_without_looking_up_a_block);
     GREATEST_MAIN_END();
 }

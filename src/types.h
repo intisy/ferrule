@@ -14,14 +14,14 @@ typedef struct { fr_range_kind kind; fr_version base; } fr_range;
 
 #include <stddef.h>
 
+struct cJSON;
+
 typedef struct {
     char *name;
     char **requires;
     size_t requires_count;
-    char *gradle_coordinate;
+    const struct cJSON *blocks;
 } fr_module;
-
-struct cJSON;
 
 typedef struct {
     char *project;
