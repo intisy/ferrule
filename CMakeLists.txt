@@ -34,7 +34,6 @@ target_compile_options(ferrule_core PRIVATE ${FERRULE_WARNING_FLAGS})
 target_include_directories(ferrule_core PUBLIC src vendor/cJSON)
 target_link_libraries(ferrule_core PUBLIC ferrule_vendor)
 
-target_compile_definitions(ferrule_core PRIVATE FERRULE_HAVE_HTTP_BACKEND)
 if(WIN32)
     target_link_libraries(ferrule_core PUBLIC winhttp)
 else()
