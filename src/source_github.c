@@ -73,8 +73,12 @@ static char *build_auth_header_value(void) {
     return value;
 }
 
+/* out_from_network tells the caller whether *out_text came from the network
+   (so it is only worth caching once it parses) rather than from an existing
+   cache hit (already validated when it was written). */
 static int fetch_manifest_text(const char *project, const char *version, const char *url,
-                               char **out_text, fr_error *err) {
+                               char **out_text, int *out_from_network, fr_error *err) {
+    *out_from_network = 0;
     if (fr_cache_read(project, version, out_text, err) != FR_OK) return FR_ERR;
     if (*out_text != NULL) return FR_OK;
 
@@ -105,8 +109,8 @@ static int fetch_manifest_text(const char *project, const char *version, const c
     text[length] = '\0';
     free(body);
 
-    fr_cache_write(project, version, text);
     *out_text = text;
+    *out_from_network = 1;
     return FR_OK;
 }
 
@@ -142,12 +146,16 @@ static int source_github_load(void *state, const char *project, const cJSON *blo
     }
 
     char *text = NULL;
-    if (fetch_manifest_text(project, version, url, &text, err) != FR_OK) {
+    int from_network = 0;
+    if (fetch_manifest_text(project, version, url, &text, &from_network, err) != FR_OK) {
         free(url);
         return FR_ERR;
     }
 
     int result = fr_project_parse(text, url, out, err);
+    if (result == FR_OK && from_network) {
+        fr_cache_write(project, version, text);
+    }
     free(text);
     free(url);
     return result;
