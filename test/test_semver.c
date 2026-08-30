@@ -55,6 +55,44 @@ TEST exact_allows_only_itself(void) {
     PASS();
 }
 
+TEST rejects_an_oversized_component(void) {
+    fr_version v; fr_error err;
+    ASSERT_EQ(FR_ERR, fr_version_parse("99999999999999999999.0.0", &v, &err));
+    PASS();
+}
+
+TEST rejects_leading_whitespace(void) {
+    fr_version v; fr_error err;
+    ASSERT_EQ(FR_ERR, fr_version_parse(" 5.0.0", &v, &err));
+    PASS();
+}
+
+TEST rejects_whitespace_before_a_later_component(void) {
+    fr_version v; fr_error err;
+    ASSERT_EQ(FR_ERR, fr_version_parse("5. 0.0", &v, &err));
+    ASSERT_EQ(FR_ERR, fr_version_parse("5.0. 0", &v, &err));
+    PASS();
+}
+
+TEST rejects_a_negative_component(void) {
+    fr_version v; fr_error err;
+    ASSERT_EQ(FR_ERR, fr_version_parse("-1.0.0", &v, &err));
+    PASS();
+}
+
+TEST rejects_a_plus_sign(void) {
+    fr_version v; fr_error err;
+    ASSERT_EQ(FR_ERR, fr_version_parse("+1.0.0", &v, &err));
+    PASS();
+}
+
+TEST accepts_the_largest_component(void) {
+    fr_version v; fr_error err;
+    ASSERT_EQ(FR_OK, fr_version_parse("1000000000.0.0", &v, &err));
+    ASSERT_EQ(1000000000, v.major);
+    PASS();
+}
+
 GREATEST_MAIN_DEFS();
 
 int main(int argc, char **argv) {
@@ -65,5 +103,11 @@ int main(int argc, char **argv) {
     RUN_TEST(caret_allows_minor_and_patch_but_not_major);
     RUN_TEST(tilde_allows_patch_but_not_minor);
     RUN_TEST(exact_allows_only_itself);
+    RUN_TEST(rejects_an_oversized_component);
+    RUN_TEST(rejects_leading_whitespace);
+    RUN_TEST(rejects_whitespace_before_a_later_component);
+    RUN_TEST(rejects_a_negative_component);
+    RUN_TEST(rejects_a_plus_sign);
+    RUN_TEST(accepts_the_largest_component);
     GREATEST_MAIN_END();
 }
