@@ -22,9 +22,10 @@ static void reset_fixtures(void) {
 
 TEST reproduces_both_real_consumers(void) {
     reset_fixtures();
-    int changed = 0; fr_error err;
-    ASSERT_EQ(FR_OK, fr_sync("test/fixtures/live/stub-translator/ferrule.json", 1, &changed, &err));
-    ASSERT_EQ(1, changed);
+    fr_sync_report report; fr_error err;
+    ASSERT_EQ(FR_OK, fr_sync("test/fixtures/live/stub-translator/ferrule.json", 1, &report, &err));
+    ASSERT_EQ(2, (int) report.count);
+    fr_sync_report_free(&report);
 
     char *stub = NULL;
     fr_file_read_text("test/fixtures/live/stub-translator/stub/build.gradle", &stub, &err);
@@ -41,10 +42,24 @@ TEST reproduces_both_real_consumers(void) {
 
 TEST the_second_run_changes_nothing(void) {
     reset_fixtures();
-    int changed = 1; fr_error err;
-    fr_sync("test/fixtures/live/stub-translator/ferrule.json", 1, &changed, &err);
-    ASSERT_EQ(FR_OK, fr_sync("test/fixtures/live/stub-translator/ferrule.json", 0, &changed, &err));
-    ASSERT_EQ(0, changed);
+    fr_sync_report report; fr_error err;
+    fr_sync("test/fixtures/live/stub-translator/ferrule.json", 1, &report, &err);
+    fr_sync_report_free(&report);
+    ASSERT_EQ(FR_OK, fr_sync("test/fixtures/live/stub-translator/ferrule.json", 0, &report, &err));
+    ASSERT_EQ(0, (int) report.count);
+    fr_sync_report_free(&report);
+    reset_fixtures();
+    PASS();
+}
+
+TEST check_names_every_drifted_consumer(void) {
+    reset_fixtures();
+    fr_sync_report report; fr_error err;
+    ASSERT_EQ(FR_OK, fr_sync("test/fixtures/live/stub-translator/ferrule.json", 0, &report, &err));
+    ASSERT_EQ(2, (int) report.count);
+    ASSERT(strstr(report.files[0], "/stub/build.gradle") != NULL);
+    ASSERT(strstr(report.files[1], "teavm-stub/build.gradle") != NULL);
+    fr_sync_report_free(&report);
     reset_fixtures();
     PASS();
 }
@@ -55,5 +70,6 @@ int main(int argc, char **argv) {
     GREATEST_MAIN_BEGIN();
     RUN_TEST(reproduces_both_real_consumers);
     RUN_TEST(the_second_run_changes_nothing);
+    RUN_TEST(check_names_every_drifted_consumer);
     GREATEST_MAIN_END();
 }

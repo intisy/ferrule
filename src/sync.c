@@ -38,10 +38,21 @@ static char *join_path(const char *dir, const char *file) {
     return joined;
 }
 
-static void wrap_error_with_file(fr_error *err, const char *target_path) {
+static void wrap_error_with_path(fr_error *err, const char *path) {
     char original[sizeof err->message];
     memcpy(original, err->message, sizeof original);
-    fr_error_set(err, "%s: %s", target_path, original);
+    fr_error_set(err, "%s: %s", path, original);
+}
+
+static int report_adopt(fr_sync_report *report, char *path, fr_error *err) {
+    char **files = realloc(report->files, (report->count + 1) * sizeof *files);
+    if (files == NULL) {
+        fr_error_set(err, "out of memory recording \"%s\"", path);
+        return FR_ERR;
+    }
+    report->files = files;
+    report->files[report->count++] = path;
+    return FR_OK;
 }
 
 static int build_registry(fr_registry **out, fr_error *err) {
@@ -63,8 +74,9 @@ static int build_registry(fr_registry **out, fr_error *err) {
 }
 
 static int sync_consumer(const fr_manifest *manifest, const fr_consumer *consumer,
-                         const char *manifest_dir, const fr_registry *registry,
-                         int write, int *changed, fr_error *err) {
+                         const char *manifest_path, const char *manifest_dir,
+                         const fr_registry *registry, int write,
+                         fr_sync_report *report, fr_error *err) {
     char *target_path = join_path(manifest_dir, consumer->file);
     if (target_path == NULL) {
         fr_error_set(err, "out of memory building the target path for consumer \"%s\"", consumer->id);
@@ -74,7 +86,7 @@ static int sync_consumer(const fr_manifest *manifest, const fr_consumer *consume
     fr_resolved *resolved = NULL;
     size_t count = 0;
     if (fr_resolve_consumer(manifest, consumer, manifest_dir, registry, &resolved, &count, err) != FR_OK) {
-        wrap_error_with_file(err, target_path);
+        wrap_error_with_path(err, manifest_path);
         free(target_path);
         return FR_ERR;
     }
@@ -83,7 +95,7 @@ static int sync_consumer(const fr_manifest *manifest, const fr_consumer *consume
     snprintf(capability, sizeof capability, "ferrule.language/%s", consumer->language);
     const fr_language_plugin *language = fr_registry_language(registry, capability);
     if (language == NULL) {
-        fr_error_set(err, "%s: no language plugin registered for \"%s\"", target_path, consumer->language);
+        fr_error_set(err, "%s: no language plugin registered for \"%s\"", manifest_path, consumer->language);
         fr_resolved_free(resolved, count);
         free(target_path);
         return FR_ERR;
@@ -91,7 +103,7 @@ static int sync_consumer(const fr_manifest *manifest, const fr_consumer *consume
 
     char *rendered = NULL;
     if (language->render(language->state, consumer, resolved, count, &rendered, err) != FR_OK) {
-        wrap_error_with_file(err, target_path);
+        wrap_error_with_path(err, manifest_path);
         fr_resolved_free(resolved, count);
         free(target_path);
         return FR_ERR;
@@ -100,7 +112,7 @@ static int sync_consumer(const fr_manifest *manifest, const fr_consumer *consume
 
     char *original_text = NULL;
     if (fr_file_read_text(target_path, &original_text, err) != FR_OK) {
-        wrap_error_with_file(err, target_path);
+        wrap_error_with_path(err, target_path);
         free(rendered);
         free(target_path);
         return FR_ERR;
@@ -108,7 +120,7 @@ static int sync_consumer(const fr_manifest *manifest, const fr_consumer *consume
 
     char *replaced = NULL;
     if (fr_region_replace(original_text, FR_REGION_BEGIN, FR_REGION_END, rendered, &replaced, err) != FR_OK) {
-        wrap_error_with_file(err, target_path);
+        wrap_error_with_path(err, target_path);
         free(original_text);
         free(rendered);
         free(target_path);
@@ -116,27 +128,26 @@ static int sync_consumer(const fr_manifest *manifest, const fr_consumer *consume
     }
     free(rendered);
 
+    int result = FR_OK;
     if (strcmp(original_text, replaced) != 0) {
-        *changed = 1;
-        if (write) {
-            if (fr_file_write_text(target_path, replaced, err) != FR_OK) {
-                wrap_error_with_file(err, target_path);
-                free(original_text);
-                free(replaced);
-                free(target_path);
-                return FR_ERR;
-            }
+        if (write) result = fr_file_write_text(target_path, replaced, err);
+        if (result != FR_OK) {
+            wrap_error_with_path(err, target_path);
+        } else if (report_adopt(report, target_path, err) != FR_OK) {
+            result = FR_ERR;
+        } else {
+            target_path = NULL;
         }
     }
 
     free(original_text);
     free(replaced);
     free(target_path);
-    return FR_OK;
+    return result;
 }
 
-int fr_sync(const char *manifest_path, int write, int *changed, fr_error *err) {
-    *changed = 0;
+int fr_sync(const char *manifest_path, int write, fr_sync_report *report, fr_error *err) {
+    memset(report, 0, sizeof *report);
 
     fr_manifest manifest;
     if (fr_manifest_read(manifest_path, &manifest, err) != FR_OK) return FR_ERR;
@@ -157,8 +168,8 @@ int fr_sync(const char *manifest_path, int write, int *changed, fr_error *err) {
 
     int result = FR_OK;
     for (size_t index = 0; index < manifest.consumer_count; index++) {
-        if (sync_consumer(&manifest, &manifest.consumers[index], manifest_dir, registry,
-                          write, changed, err) != FR_OK) {
+        if (sync_consumer(&manifest, &manifest.consumers[index], manifest_path, manifest_dir,
+                          registry, write, report, err) != FR_OK) {
             result = FR_ERR;
             break;
         }
@@ -168,4 +179,12 @@ int fr_sync(const char *manifest_path, int write, int *changed, fr_error *err) {
     free(manifest_dir);
     fr_manifest_free(&manifest);
     return result;
+}
+
+void fr_sync_report_free(fr_sync_report *report) {
+    if (report == NULL) return;
+    for (size_t index = 0; index < report->count; index++) free(report->files[index]);
+    free(report->files);
+    report->files = NULL;
+    report->count = 0;
 }

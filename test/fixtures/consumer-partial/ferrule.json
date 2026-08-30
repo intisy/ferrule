@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "project": "intisy-ai/stub-translator",
+  "version": "1.2.0",
+  "modules": {},
+  "sources": {
+    "intisy-ai/basekit": { "kind": "path", "path": "../producer" }
+  },
+  "consumers": [
+    {
+      "id": "a",
+      "language": "gradle",
+      "file": "a.gradle",
+      "configuration": "githubImplementation",
+      "dependencies": {
+        "intisy-ai/basekit": { "version": "^5.0.0", "modules": ["ir"] }
+      }
+    },
+    {
+      "id": "b",
+      "language": "gradle",
+      "file": "b.gradle",
+      "configuration": "githubImplementation",
+      "dependencies": {
+        "intisy-ai/basekit": { "version": "^5.0.0", "modules": ["ir"] }
+      }
+    }
+  ]
+}
