@@ -1,6 +1,8 @@
 #include "greatest.h"
 #include "manifest.h"
 
+#include "cJSON.h"
+
 #include <string.h>
 
 TEST reads_a_producer(void) {
@@ -48,7 +50,10 @@ TEST reads_a_consumer(void) {
     ASSERT_EQ(FR_OK, fr_manifest_read("test/fixtures/consumer/ferrule.json", &manifest, &err));
     ASSERT_EQ(1, (int) manifest.source_count);
     ASSERT_STR_EQ("intisy-ai/basekit", manifest.sources[0].project);
-    ASSERT_STR_EQ("../producer", manifest.sources[0].path);
+    ASSERT_STR_EQ("path", manifest.sources[0].kind);
+    const cJSON *path_field = cJSON_GetObjectItemCaseSensitive(manifest.sources[0].block, "path");
+    ASSERT(cJSON_IsString(path_field));
+    ASSERT_STR_EQ("../producer", path_field->valuestring);
     ASSERT_EQ(1, (int) manifest.consumer_count);
     ASSERT_STR_EQ("stub", manifest.consumers[0].id);
     ASSERT_STR_EQ("gradle", manifest.consumers[0].language);
@@ -56,6 +61,24 @@ TEST reads_a_consumer(void) {
     ASSERT_EQ(1, (int) manifest.consumers[0].dependency_count);
     ASSERT_EQ(FR_RANGE_CARET, manifest.consumers[0].dependencies[0].range.kind);
     ASSERT_STR_EQ("ir", manifest.consumers[0].dependencies[0].modules[0]);
+    fr_manifest_free(&manifest);
+    PASS();
+}
+
+TEST keeps_a_source_block_of_any_kind(void) {
+    fr_manifest manifest;
+    fr_error err;
+    ASSERT_EQ(FR_OK, fr_manifest_read("test/fixtures/consumer/ferrule-unknown-source.json", &manifest, &err));
+
+    const fr_source *source = fr_manifest_source(&manifest, "intisy-ai/basekit");
+    ASSERT(source != NULL);
+    ASSERT_STR_EQ("some-future-kind", source->kind);
+    ASSERT(source->block != NULL);
+
+    const cJSON *field = cJSON_GetObjectItemCaseSensitive(source->block, "whatever");
+    ASSERT(cJSON_IsString(field));
+    ASSERT_STR_EQ("value", field->valuestring);
+
     fr_manifest_free(&manifest);
     PASS();
 }
@@ -76,6 +99,7 @@ int main(int argc, char **argv) {
     RUN_TEST(leaves_an_absent_language_block_null);
     RUN_TEST(returns_null_for_an_unknown_module);
     RUN_TEST(reads_a_consumer);
+    RUN_TEST(keeps_a_source_block_of_any_kind);
     RUN_TEST(rejects_an_unknown_schema);
     GREATEST_MAIN_END();
 }

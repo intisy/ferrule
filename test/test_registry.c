@@ -1,11 +1,13 @@
 #include "greatest.h"
 #include "registry.h"
 
+#include "cJSON.h"
+
 #include <string.h>
 
-static int fake_load(void *state, const char *project, const char *base_dir,
-                     fr_project *out, fr_error *err) {
-    (void) project; (void) base_dir; (void) out; (void) err;
+static int fake_load(void *state, const char *project, const cJSON *block,
+                     const char *base_dir, fr_project *out, fr_error *err) {
+    (void) project; (void) block; (void) base_dir; (void) out; (void) err;
     *(int *) state = 1;
     return FR_OK;
 }
@@ -20,7 +22,7 @@ TEST returns_a_plugin_registered_under_its_capability(void) {
     const fr_source_plugin *found = fr_registry_source(registry, "ferrule.source/test");
     ASSERT(found != NULL);
     fr_project project;
-    ASSERT_EQ(FR_OK, found->load(found->state, "x/y", ".", &project, &err));
+    ASSERT_EQ(FR_OK, found->load(found->state, "x/y", NULL, ".", &project, &err));
     ASSERT_EQ(1, called);
     fr_registry_destroy(registry);
     PASS();

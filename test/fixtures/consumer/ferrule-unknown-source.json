@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "project": "intisy-ai/example",
+  "version": "1.0.0",
+  "modules": {},
+  "sources": {
+    "intisy-ai/basekit": { "kind": "some-future-kind", "whatever": "value" }
+  },
+  "consumers": []
+}

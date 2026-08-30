@@ -100,22 +100,30 @@ static int builder_push(fr_resolved_builder *builder, const fr_project *project,
     return FR_OK;
 }
 
-static int resolve_dependency(const fr_dependency *dependency, const char *manifest_dir,
-                              const fr_registry *registry, const char *language,
-                              fr_resolved_builder *builder, fr_error *err) {
+static int resolve_dependency(const fr_dependency *dependency, const fr_manifest *manifest,
+                              const char *manifest_dir, const fr_registry *registry,
+                              const char *language, fr_resolved_builder *builder, fr_error *err) {
     if (strcmp(language, "gradle") != 0) {
         fr_error_set(err, "language \"%s\" is not supported", language);
         return FR_ERR;
     }
 
-    const fr_source_plugin *source = fr_registry_source(registry, "ferrule.source/path");
+    const fr_source *entry = fr_manifest_source(manifest, dependency->project);
+    if (entry == NULL) {
+        fr_error_set(err, "sources has no entry for \"%s\"", dependency->project);
+        return FR_ERR;
+    }
+
+    char capability[256];
+    snprintf(capability, sizeof capability, "ferrule.source/%s", entry->kind);
+    const fr_source_plugin *source = fr_registry_source(registry, capability);
     if (source == NULL) {
-        fr_error_set(err, "no source plugin registered for \"ferrule.source/path\"");
+        fr_error_set(err, "no source plugin registered for \"%s\"", capability);
         return FR_ERR;
     }
 
     fr_project project;
-    if (source->load(source->state, dependency->project, manifest_dir, &project, err) != FR_OK) {
+    if (source->load(source->state, dependency->project, entry->block, manifest_dir, &project, err) != FR_OK) {
         return FR_ERR;
     }
 
@@ -192,8 +200,8 @@ static int compare_resolved(const void *left, const void *right) {
     return strcmp(a->module, b->module);
 }
 
-int fr_resolve_consumer(const fr_consumer *consumer, const char *manifest_dir,
-                        const fr_registry *registry,
+int fr_resolve_consumer(const fr_consumer *consumer, const fr_manifest *manifest,
+                        const char *manifest_dir, const fr_registry *registry,
                         fr_resolved **out, size_t *count, fr_error *err) {
     *out = NULL;
     *count = 0;
@@ -202,7 +210,7 @@ int fr_resolve_consumer(const fr_consumer *consumer, const char *manifest_dir,
     memset(&builder, 0, sizeof builder);
 
     for (size_t index = 0; index < consumer->dependency_count; index++) {
-        if (resolve_dependency(&consumer->dependencies[index], manifest_dir, registry,
+        if (resolve_dependency(&consumer->dependencies[index], manifest, manifest_dir, registry,
                                consumer->language, &builder, err) != FR_OK) {
             fr_resolved_free(builder.items, builder.count);
             return FR_ERR;

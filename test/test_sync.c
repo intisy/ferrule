@@ -113,6 +113,15 @@ TEST counts_the_files_written_before_a_failure(void) {
     PASS();
 }
 
+TEST reports_an_unknown_source_kind_as_a_missing_plugin(void) {
+    fr_error err;
+    fr_sync_report report;
+    ASSERT_EQ(FR_ERR, fr_sync("test/fixtures/consumer/ferrule-unknown-source-consumer.json", 0, &report, &err));
+    ASSERT(strstr(err.message, "ferrule.source/some-future-kind") != NULL);
+    fr_sync_report_free(&report);
+    PASS();
+}
+
 GREATEST_MAIN_DEFS();
 
 int main(int argc, char **argv) {
@@ -124,5 +133,6 @@ int main(int argc, char **argv) {
     RUN_TEST(reports_a_build_file_without_markers);
     RUN_TEST(names_the_manifest_when_resolution_fails);
     RUN_TEST(counts_the_files_written_before_a_failure);
+    RUN_TEST(reports_an_unknown_source_kind_as_a_missing_plugin);
     GREATEST_MAIN_END();
 }

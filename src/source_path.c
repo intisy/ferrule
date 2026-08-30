@@ -1,18 +1,12 @@
 #include "source_path.h"
 
 #include "error.h"
+#include "jsonx.h"
 #include "manifest.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-static const fr_source *find_source(const fr_manifest *manifest, const char *project) {
-    for (size_t index = 0; index < manifest->source_count; index++) {
-        if (strcmp(manifest->sources[index].project, project) == 0) return &manifest->sources[index];
-    }
-    return NULL;
-}
 
 static char *join_manifest_path(const char *base_dir, const char *relative_path) {
     if (base_dir == NULL || base_dir[0] == '\0') base_dir = ".";
@@ -22,17 +16,17 @@ static char *join_manifest_path(const char *base_dir, const char *relative_path)
     return joined;
 }
 
-static int source_path_load(void *state, const char *project, const char *base_dir,
-                            fr_project *out, fr_error *err) {
+static int source_path_load(void *state, const char *project, const cJSON *block,
+                            const char *base_dir, fr_project *out, fr_error *err) {
+    (void) state;
     memset(out, 0, sizeof *out);
-    const fr_manifest *manifest = (const fr_manifest *) state;
-    const fr_source *source = find_source(manifest, project);
-    if (source == NULL) {
-        fr_error_set(err, "sources has no entry for \"%s\"", project);
-        return FR_ERR;
-    }
 
-    char *file_path = join_manifest_path(base_dir, source->path);
+    char path[256];
+    snprintf(path, sizeof path, "sources.%s", project);
+    const char *relative_path = NULL;
+    if (fr_json_string(block, "path", path, &relative_path, err) != FR_OK) return FR_ERR;
+
+    char *file_path = join_manifest_path(base_dir, relative_path);
     if (file_path == NULL) {
         fr_error_set(err, "out of memory joining path for \"%s\"", project);
         return FR_ERR;

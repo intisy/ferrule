@@ -28,7 +28,7 @@ static void module_free(fr_module *module) {
 static void source_free(fr_source *source) {
     if (source == NULL) return;
     free(source->project);
-    free(source->path);
+    free(source->kind);
 }
 
 static void dependency_free(fr_dependency *dependency) {
@@ -130,23 +130,14 @@ static int read_source(const cJSON *entry, const char *project_name, fr_source *
 
     const char *kind = NULL;
     if (fr_json_string(entry, "kind", path, &kind, err) != FR_OK) return FR_ERR;
-    if (strcmp(kind, "path") != 0) {
-        fr_error_set(err, "source \"%s\" has unsupported kind \"%s\"", project_name, kind);
-        return FR_ERR;
-    }
-    const char *path_value = NULL;
-    if (fr_json_string(entry, "path", path, &path_value, err) != FR_OK) return FR_ERR;
 
     out->project = duplicate(project_name);
-    if (out->project == NULL) {
+    out->kind = duplicate(kind);
+    if (out->project == NULL || out->kind == NULL) {
         fr_error_set(err, "out of memory reading %s", path);
         return FR_ERR;
     }
-    out->path = duplicate(path_value);
-    if (out->path == NULL) {
-        fr_error_set(err, "out of memory reading %s.path", path);
-        return FR_ERR;
-    }
+    out->block = entry;
     return FR_OK;
 }
 
@@ -291,7 +282,7 @@ int fr_project_read(const char *file_path, fr_project *out, fr_error *err) {
         cJSON_Delete(root);
         return FR_ERR;
     }
-    cJSON_Delete(root);
+    out->document = root;
     return FR_OK;
 }
 
@@ -304,7 +295,7 @@ int fr_manifest_read(const char *file_path, fr_manifest *out, fr_error *err) {
         cJSON_Delete(root);
         return FR_ERR;
     }
-    cJSON_Delete(root);
+    out->document = root;
     return FR_OK;
 }
 
@@ -315,9 +306,11 @@ void fr_project_free(fr_project *project) {
     }
     free(project->modules);
     free(project->project);
+    cJSON_Delete(project->document);
     project->modules = NULL;
     project->module_count = 0;
     project->project = NULL;
+    project->document = NULL;
 }
 
 void fr_manifest_free(fr_manifest *manifest) {
@@ -335,12 +328,22 @@ void fr_manifest_free(fr_manifest *manifest) {
     manifest->source_count = 0;
     manifest->consumers = NULL;
     manifest->consumer_count = 0;
+    cJSON_Delete(manifest->document);
+    manifest->document = NULL;
 }
 
 const fr_module *fr_project_module(const fr_project *project, const char *name) {
     if (project == NULL || name == NULL) return NULL;
     for (size_t index = 0; index < project->module_count; index++) {
         if (strcmp(project->modules[index].name, name) == 0) return &project->modules[index];
+    }
+    return NULL;
+}
+
+const fr_source *fr_manifest_source(const fr_manifest *manifest, const char *project) {
+    if (manifest == NULL || project == NULL) return NULL;
+    for (size_t index = 0; index < manifest->source_count; index++) {
+        if (strcmp(manifest->sources[index].project, project) == 0) return &manifest->sources[index];
     }
     return NULL;
 }

@@ -21,11 +21,14 @@ typedef struct {
     char *gradle_coordinate;
 } fr_module;
 
+struct cJSON;
+
 typedef struct {
     char *project;
     fr_version version;
     fr_module *modules;
     size_t module_count;
+    struct cJSON *document;
 } fr_project;
 
 typedef struct {
@@ -46,7 +49,8 @@ typedef struct {
 
 typedef struct {
     char *project;
-    char *path;
+    char *kind;
+    const struct cJSON *block;
 } fr_source;
 
 typedef struct {
@@ -55,6 +59,7 @@ typedef struct {
     size_t source_count;
     fr_consumer *consumers;
     size_t consumer_count;
+    struct cJSON *document;
 } fr_manifest;
 
 #endif

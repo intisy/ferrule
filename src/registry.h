@@ -7,8 +7,8 @@
 
 typedef struct {
     const char *capability;
-    int (*load)(void *state, const char *project, const char *base_dir,
-                fr_project *out, fr_error *err);
+    int (*load)(void *state, const char *project, const struct cJSON *block,
+                const char *base_dir, fr_project *out, fr_error *err);
     void *state;
 } fr_source_plugin;
 

@@ -12,8 +12,8 @@ struct fr_resolved {
     char *gradle_coordinate;
 };
 
-int fr_resolve_consumer(const fr_consumer *consumer, const char *manifest_dir,
-                        const fr_registry *registry,
+int fr_resolve_consumer(const fr_consumer *consumer, const fr_manifest *manifest,
+                        const char *manifest_dir, const fr_registry *registry,
                         fr_resolved **out, size_t *count, fr_error *err);
 void fr_resolved_free(fr_resolved *items, size_t count);
 
