@@ -11,5 +11,8 @@ jobs:
     with:
       toolchains: cmake
       runners: '["ubuntu-latest", "windows-latest", "macos-latest"]'
+      cmake_configure: '-B build -DCMAKE_BUILD_TYPE=Release'
+      cmake_build: '--build build --config Release'
+      cmake_test: 'ctest --test-dir build -C Release --output-on-failure'
     secrets:
       envPAT: ${{ secrets.PAT }}
