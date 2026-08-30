@@ -10,11 +10,22 @@
 
 #ifdef _WIN32
 #include <direct.h>
+#include <windows.h>
 #else
 #include <sys/stat.h>
 #endif
 
 static int CACHE_ENABLED = 1;
+
+/* Windows silently strips a trailing dot from a path component, so
+   "basekit" and "basekit." would otherwise alias to the same directory. */
+static int has_trailing_dot_component(const char *text) {
+    size_t length = strlen(text);
+    if (length == 0) return 0;
+    if (text[length - 1] == '.') return 1;
+    const char *slash = strchr(text, '/');
+    return slash != NULL && slash != text && slash[-1] == '.';
+}
 
 static int is_safe_component(const char *text, int allow_one_slash) {
     if (text == NULL || text[0] == '\0') return 0;
@@ -22,6 +33,7 @@ static int is_safe_component(const char *text, int allow_one_slash) {
     if (strstr(text, "..") != NULL) return 0;
     if (strchr(text, '\\') != NULL) return 0;
     if (strchr(text, ':') != NULL) return 0;
+    if (has_trailing_dot_component(text)) return 0;
 
     const char *slash = strchr(text, '/');
     if (slash == NULL) return 1;
@@ -29,29 +41,33 @@ static int is_safe_component(const char *text, int allow_one_slash) {
     return strchr(slash + 1, '/') == NULL && slash[1] != '\0';
 }
 
+static int check_root_fit(int written, size_t out_size, fr_error *err) {
+    if (written < 0 || (size_t) written >= out_size) {
+        fr_error_set(err, "cache root path is too long");
+        return FR_ERR;
+    }
+    return FR_OK;
+}
+
 static int cache_root_dir(char *out, size_t out_size, fr_error *err) {
     const char *override = getenv("FERRULE_CACHE_DIR");
     if (override != NULL && override[0] != '\0') {
-        snprintf(out, out_size, "%s", override);
-        return FR_OK;
+        return check_root_fit(snprintf(out, out_size, "%s", override), out_size, err);
     }
 
 #ifdef _WIN32
     const char *local_appdata = getenv("LOCALAPPDATA");
     if (local_appdata != NULL && local_appdata[0] != '\0') {
-        snprintf(out, out_size, "%s/ferrule/cache", local_appdata);
-        return FR_OK;
+        return check_root_fit(snprintf(out, out_size, "%s/ferrule/cache", local_appdata), out_size, err);
     }
 #else
     const char *xdg_cache_home = getenv("XDG_CACHE_HOME");
     if (xdg_cache_home != NULL && xdg_cache_home[0] != '\0') {
-        snprintf(out, out_size, "%s/ferrule", xdg_cache_home);
-        return FR_OK;
+        return check_root_fit(snprintf(out, out_size, "%s/ferrule", xdg_cache_home), out_size, err);
     }
     const char *home = getenv("HOME");
     if (home != NULL && home[0] != '\0') {
-        snprintf(out, out_size, "%s/.cache/ferrule", home);
-        return FR_OK;
+        return check_root_fit(snprintf(out, out_size, "%s/.cache/ferrule", home), out_size, err);
     }
 #endif
 
@@ -121,6 +137,18 @@ static void make_parent_directories(char *path) {
     }
 }
 
+static int rename_into_place(const char *temp_path, const char *final_path) {
+#ifdef _WIN32
+    return MoveFileExA(temp_path, final_path, MOVEFILE_REPLACE_EXISTING) ? FR_OK : FR_ERR;
+#else
+    return rename(temp_path, final_path) == 0 ? FR_OK : FR_ERR;
+#endif
+}
+
+/* Writes to a sibling "<path>.tmp" first and only renames it over the final
+   path once the full text is confirmed on disk, so a short write (full disk,
+   killed process) never leaves a truncated file where fr_cache_read looks.
+   Every step fails silently: a cache write must never fail the caller. */
 void fr_cache_write(const char *project, const char *version, const char *text) {
     if (!CACHE_ENABLED) return;
 
@@ -130,11 +158,24 @@ void fr_cache_write(const char *project, const char *version, const char *text) 
 
     make_parent_directories(path);
 
-    FILE *file = fopen(path, "wb");
-    free(path);
-    if (file == NULL) return;
+    size_t temp_path_size = strlen(path) + strlen(".tmp") + 1;
+    char *temp_path = malloc(temp_path_size);
+    if (temp_path == NULL) { free(path); return; }
+    snprintf(temp_path, temp_path_size, "%s.tmp", path);
+
+    FILE *file = fopen(temp_path, "wb");
+    if (file == NULL) { free(temp_path); free(path); return; }
 
     size_t length = strlen(text);
-    (void) fwrite(text, 1, length, file);
-    fclose(file);
+    size_t written = fwrite(text, 1, length, file);
+    int close_result = fclose(file);
+
+    if (written != length || close_result != 0) {
+        remove(temp_path);
+    } else if (rename_into_place(temp_path, path) != FR_OK) {
+        remove(temp_path);
+    }
+
+    free(temp_path);
+    free(path);
 }
