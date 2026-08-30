@@ -22,12 +22,12 @@ list(REMOVE_ITEM FERRULE_CORE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/main.c)
 
 if(FERRULE_CORE_SOURCES)
     add_library(ferrule_core STATIC ${FERRULE_CORE_SOURCES})
+    target_compile_options(ferrule_core PRIVATE ${FERRULE_WARNING_FLAGS})
 else()
     add_library(ferrule_core STATIC vendor/cJSON/cJSON.c)
 endif()
 target_include_directories(ferrule_core PUBLIC src vendor/cJSON)
 target_link_libraries(ferrule_core PUBLIC ferrule_vendor)
-target_compile_options(ferrule_core PRIVATE ${FERRULE_WARNING_FLAGS})
 
 add_executable(ferrule src/main.c)
 target_link_libraries(ferrule PRIVATE ferrule_core)
