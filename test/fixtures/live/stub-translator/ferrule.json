@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "project": "intisy-ai/stub-translator",
+  "version": "1.2.0",
+  "modules": {},
+  "sources": {
+    "intisy-ai/basekit": { "kind": "path", "path": "../basekit" }
+  },
+  "consumers": [
+    {
+      "id": "stub",
+      "language": "gradle",
+      "file": "stub/build.gradle",
+      "configuration": "githubImplementation",
+      "dependencies": {
+        "intisy-ai/basekit": { "version": "^5.0.0", "modules": ["ir"] }
+      }
+    },
+    {
+      "id": "teavm-stub",
+      "language": "gradle",
+      "file": "teavm-stub/build.gradle",
+      "configuration": "githubImplementation",
+      "dependencies": {
+        "intisy-ai/basekit": { "version": "^5.0.0", "modules": ["ir"] }
+      }
+    }
+  ]
+}
