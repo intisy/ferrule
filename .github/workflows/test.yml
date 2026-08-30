@@ -1,0 +1,16 @@
+name: Test
+
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  test:
+    uses: intisy/workflows/.github/workflows/test.yml@main
+    with:
+      toolchains: cmake
+      runners: '["ubuntu-latest", "windows-latest", "macos-latest"]'
+    secrets:
+      envPAT: ${{ secrets.PAT }}
