@@ -19,6 +19,7 @@ static int optional_string(const cJSON *block, const char *key, const char *path
     return fr_json_string(block, key, path, out, err);
 }
 
+/* Base capacity covers a no-growth substitution; each match then adds only the amount version_len exceeds placeholder_len, the exact per-match growth. */
 static char *substitute_version(const char *tag_template, const char *version, fr_error *err) {
     const char *placeholder = "{version}";
     size_t placeholder_len = strlen(placeholder);

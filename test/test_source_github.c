@@ -11,6 +11,7 @@
 
 #ifdef _WIN32
 #include <direct.h>
+#include <process.h>
 #define rmdir _rmdir
 #else
 #include <unistd.h>
@@ -36,17 +37,22 @@ static int stub_get(const char *url, const fr_http_header *headers, size_t heade
     return FR_OK;
 }
 
+/* Unique per process (not just per test) so a crash mid-test or a second CI job
+   running this binary concurrently on the same machine can never share, and thus
+   never contend over, another run's cache entries. */
 static const char *test_cache_root(void) {
 #ifdef _WIN32
     const char *base = getenv("TEMP");
     if (base == NULL) base = getenv("TMP");
     if (base == NULL) base = "C:/Windows/Temp";
+    int pid = _getpid();
 #else
     const char *base = getenv("TMPDIR");
     if (base == NULL) base = "/tmp";
+    int pid = (int) getpid();
 #endif
     static char root[512];
-    snprintf(root, sizeof root, "%s/ferrule_test_source_github_cache", base);
+    snprintf(root, sizeof root, "%s/ferrule_test_source_github_cache_%d", base, pid);
     return root;
 }
 
