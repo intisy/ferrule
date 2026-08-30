@@ -14,5 +14,6 @@ jobs:
       cmake_configure: '-B build -DCMAKE_BUILD_TYPE=Release'
       cmake_build: '--build build --config Release'
       cmake_test: 'ctest --test-dir build -C Release --output-on-failure'
+      apt_packages: libcurl4-openssl-dev
     secrets:
       envPAT: ${{ secrets.PAT }}
