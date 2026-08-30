@@ -62,8 +62,17 @@ static int name_queue_push(fr_name_queue *queue, const char *name, fr_error *err
     return FR_OK;
 }
 
+static int builder_contains(const fr_resolved_builder *builder, const char *project, const char *module) {
+    for (size_t index = 0; index < builder->count; index++) {
+        if (strcmp(builder->items[index].project, project) == 0
+            && strcmp(builder->items[index].module, module) == 0) return 1;
+    }
+    return 0;
+}
+
 static int builder_push(fr_resolved_builder *builder, const fr_project *project,
                         const fr_module *module, const char *coordinate, fr_error *err) {
+    if (builder_contains(builder, project->project, module->name)) return FR_OK;
     if (builder->count == builder->capacity) {
         size_t capacity = builder->capacity == 0 ? 8 : builder->capacity * 2;
         fr_resolved *items = realloc(builder->items, capacity * sizeof *items);
@@ -95,6 +104,11 @@ static int builder_push(fr_resolved_builder *builder, const fr_project *project,
 static int resolve_dependency(const fr_manifest *manifest, const fr_dependency *dependency,
                               const char *manifest_dir, const fr_registry *registry,
                               const char *language, fr_resolved_builder *builder, fr_error *err) {
+    if (strcmp(language, "gradle") != 0) {
+        fr_error_set(err, "language \"%s\" is not supported", language);
+        return FR_ERR;
+    }
+
     const fr_source_plugin *source = fr_registry_source(registry, "ferrule.source/path");
     if (source == NULL) {
         fr_error_set(err, "no source plugin registered for \"ferrule.source/path\"");
@@ -103,6 +117,12 @@ static int resolve_dependency(const fr_manifest *manifest, const fr_dependency *
 
     fr_project project;
     if (source->load((void *) manifest, dependency->project, manifest_dir, &project, err) != FR_OK) {
+        return FR_ERR;
+    }
+
+    if (strcmp(project.project, dependency->project) != 0) {
+        fr_error_set(err, "source for \"%s\" declares project \"%s\"", dependency->project, project.project);
+        fr_project_free(&project);
         return FR_ERR;
     }
 
@@ -137,15 +157,7 @@ static int resolve_dependency(const fr_manifest *manifest, const fr_dependency *
             return FR_ERR;
         }
 
-        const char *coordinate = NULL;
-        if (strcmp(language, "gradle") == 0) {
-            coordinate = module->gradle_coordinate;
-        } else {
-            fr_error_set(err, "language \"%s\" is not supported", language);
-            free(queue.items);
-            fr_project_free(&project);
-            return FR_ERR;
-        }
+        const char *coordinate = module->gradle_coordinate;
         if (coordinate == NULL) {
             fr_error_set(err, "module \"%s\" has no \"%s\" coordinate", name, language);
             free(queue.items);
@@ -198,7 +210,7 @@ int fr_resolve_consumer(const fr_manifest *manifest, const fr_consumer *consumer
         }
     }
 
-    qsort(builder.items, builder.count, sizeof *builder.items, compare_resolved);
+    if (builder.count > 1) qsort(builder.items, builder.count, sizeof *builder.items, compare_resolved);
 
     *out = builder.items;
     *count = builder.count;

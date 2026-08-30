@@ -95,6 +95,37 @@ TEST reports_an_unknown_module_by_name(void) {
     PASS();
 }
 
+TEST rejects_a_project_that_does_not_match_its_source(void) {
+    fr_manifest manifest; fr_error err;
+    fr_manifest_read("test/fixtures/consumer-mismatch/ferrule.json", &manifest, &err);
+    fr_registry *registry = with_path_source();
+
+    fr_resolved *items = NULL; size_t count = 0;
+    ASSERT_EQ(FR_ERR, fr_resolve_consumer(&manifest, &manifest.consumers[0],
+                                          "test/fixtures/consumer-mismatch", registry, &items, &count, &err));
+    ASSERT(strstr(err.message, "intisy-ai/basekit") != NULL);
+    ASSERT(strstr(err.message, "intisy-ai/not-basekit") != NULL);
+
+    fr_registry_destroy(registry);
+    fr_manifest_free(&manifest);
+    PASS();
+}
+
+TEST rejects_an_unsupported_language_even_with_no_modules(void) {
+    fr_manifest manifest; fr_error err;
+    fr_manifest_read("test/fixtures/consumer-badlanguage/ferrule.json", &manifest, &err);
+    fr_registry *registry = with_path_source();
+
+    fr_resolved *items = NULL; size_t count = 0;
+    ASSERT_EQ(FR_ERR, fr_resolve_consumer(&manifest, &manifest.consumers[0],
+                                          "test/fixtures/consumer-badlanguage", registry, &items, &count, &err));
+    ASSERT(strstr(err.message, "npm") != NULL);
+
+    fr_registry_destroy(registry);
+    fr_manifest_free(&manifest);
+    PASS();
+}
+
 GREATEST_MAIN_DEFS();
 
 int main(int argc, char **argv) {
@@ -104,5 +135,7 @@ int main(int argc, char **argv) {
     RUN_TEST(rejects_a_version_outside_the_range);
     RUN_TEST(reports_a_module_absent_from_the_language);
     RUN_TEST(reports_an_unknown_module_by_name);
+    RUN_TEST(rejects_a_project_that_does_not_match_its_source);
+    RUN_TEST(rejects_an_unsupported_language_even_with_no_modules);
     GREATEST_MAIN_END();
 }

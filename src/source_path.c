@@ -15,6 +15,7 @@ static const fr_source *find_source(const fr_manifest *manifest, const char *pro
 }
 
 static char *join_manifest_path(const char *base_dir, const char *relative_path) {
+    if (base_dir == NULL || base_dir[0] == '\0') base_dir = ".";
     size_t length = strlen(base_dir) + 1 + strlen(relative_path) + 1 + strlen("ferrule.json") + 1;
     char *joined = malloc(length);
     if (joined != NULL) snprintf(joined, length, "%s/%s/ferrule.json", base_dir, relative_path);
