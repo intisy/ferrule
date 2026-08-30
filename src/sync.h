@@ -10,7 +10,7 @@ typedef struct {
     size_t count;
 } fr_sync_report;
 
-int fr_sync(const char *manifest_path, int write, fr_sync_report *report, fr_error *err);
+int fr_sync(const char *manifest_path, int write, int use_cache, fr_sync_report *report, fr_error *err);
 void fr_sync_report_free(fr_sync_report *report);
 
 #endif

@@ -5,11 +5,11 @@
 
 #define FERRULE_VERSION "0.1.0"
 
-static int run(const char *manifest_path, int write) {
+static int run(const char *manifest_path, int write, int use_cache) {
     fr_error err;
     fr_sync_report report;
     int status = 0;
-    if (fr_sync(manifest_path, write, &report, &err) != FR_OK) {
+    if (fr_sync(manifest_path, write, use_cache, &report, &err) != FR_OK) {
         fprintf(stderr, "ferrule: %s\n", err.message);
         if (write && report.count > 0) {
             fprintf(stderr, "ferrule: %zu file%s updated before the failure\n",
@@ -32,13 +32,25 @@ static int run(const char *manifest_path, int write) {
 }
 
 int main(int argc, char **argv) {
-    const char *manifest_path = argc >= 3 ? argv[2] : "ferrule.json";
-    if (argc >= 2 && strcmp(argv[1], "--version") == 0) {
+    char *positional[3];
+    int positional_count = 0;
+    int use_cache = 1;
+
+    for (int index = 1; index < argc; index++) {
+        if (strcmp(argv[index], "--no-cache") == 0) {
+            use_cache = 0;
+        } else if (positional_count < (int) (sizeof positional / sizeof positional[0])) {
+            positional[positional_count++] = argv[index];
+        }
+    }
+
+    const char *manifest_path = positional_count >= 2 ? positional[1] : "ferrule.json";
+    if (positional_count >= 1 && strcmp(positional[0], "--version") == 0) {
         printf("ferrule %s\n", FERRULE_VERSION);
         return 0;
     }
-    if (argc >= 2 && strcmp(argv[1], "sync") == 0) return run(manifest_path, 1);
-    if (argc >= 2 && strcmp(argv[1], "check") == 0) return run(manifest_path, 0);
-    fprintf(stderr, "usage: ferrule [--version | sync [manifest] | check [manifest]]\n");
+    if (positional_count >= 1 && strcmp(positional[0], "sync") == 0) return run(manifest_path, 1, use_cache);
+    if (positional_count >= 1 && strcmp(positional[0], "check") == 0) return run(manifest_path, 0, use_cache);
+    fprintf(stderr, "usage: ferrule [--version | sync [manifest] | check [manifest]] [--no-cache]\n");
     return 2;
 }

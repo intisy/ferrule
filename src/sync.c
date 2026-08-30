@@ -1,11 +1,13 @@
 #include "sync.h"
 
+#include "cache.h"
 #include "error.h"
 #include "lang_gradle.h"
 #include "manifest.h"
 #include "region.h"
 #include "registry.h"
 #include "resolve.h"
+#include "source_github.h"
 #include "source_path.h"
 
 #include <stdio.h>
@@ -59,6 +61,10 @@ static int build_registry(fr_registry **out, fr_error *err) {
         return FR_ERR;
     }
     if (fr_registry_add_source(registry, &FR_SOURCE_PATH, err) != FR_OK) {
+        fr_registry_destroy(registry);
+        return FR_ERR;
+    }
+    if (fr_registry_add_source(registry, &FR_SOURCE_GITHUB, err) != FR_OK) {
         fr_registry_destroy(registry);
         return FR_ERR;
     }
@@ -144,8 +150,9 @@ static int sync_consumer(const fr_consumer *consumer, const fr_manifest *manifes
     return result;
 }
 
-int fr_sync(const char *manifest_path, int write, fr_sync_report *report, fr_error *err) {
+int fr_sync(const char *manifest_path, int write, int use_cache, fr_sync_report *report, fr_error *err) {
     memset(report, 0, sizeof *report);
+    fr_cache_set_enabled(use_cache);
 
     fr_manifest manifest;
     if (fr_manifest_read(manifest_path, &manifest, err) != FR_OK) return FR_ERR;

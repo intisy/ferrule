@@ -17,6 +17,10 @@
 
 static int CACHE_ENABLED = 1;
 
+void fr_cache_set_enabled(int enabled) {
+    CACHE_ENABLED = enabled;
+}
+
 /* Windows silently strips a trailing dot from a path component, so
    "basekit" and "basekit." would otherwise alias to the same directory. */
 static int has_trailing_dot_component(const char *text) {
