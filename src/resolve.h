@@ -8,7 +8,6 @@
 
 struct fr_resolved {
     char *project;
-    fr_version version;
     char *module;
     char *gradle_coordinate;
 };

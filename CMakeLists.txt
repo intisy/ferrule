@@ -17,7 +17,7 @@ endif()
 add_library(ferrule_vendor STATIC vendor/cJSON/cJSON.c)
 target_include_directories(ferrule_vendor PUBLIC vendor/cJSON)
 
-file(GLOB FERRULE_CORE_SOURCES src/*.c)
+file(GLOB FERRULE_CORE_SOURCES CONFIGURE_DEPENDS src/*.c)
 list(REMOVE_ITEM FERRULE_CORE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/main.c)
 
 add_library(ferrule_core STATIC ${FERRULE_CORE_SOURCES})
@@ -30,7 +30,7 @@ target_link_libraries(ferrule PRIVATE ferrule_core)
 target_compile_options(ferrule PRIVATE ${FERRULE_WARNING_FLAGS})
 
 enable_testing()
-file(GLOB FERRULE_TESTS test/test_*.c)
+file(GLOB FERRULE_TESTS CONFIGURE_DEPENDS test/test_*.c)
 foreach(test_file ${FERRULE_TESTS})
     get_filename_component(test_name ${test_file} NAME_WE)
     add_executable(${test_name} ${test_file})

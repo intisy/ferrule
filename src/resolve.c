@@ -89,7 +89,6 @@ static int builder_push(fr_resolved_builder *builder, const fr_project *project,
     entry.project = duplicate(project->project);
     entry.module = duplicate(module->name);
     entry.gradle_coordinate = duplicate(coordinate);
-    entry.version = project->version;
     if (entry.project == NULL || entry.module == NULL || entry.gradle_coordinate == NULL) {
         free(entry.project);
         free(entry.module);

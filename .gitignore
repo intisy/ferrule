@@ -2,3 +2,4 @@ build/
 test/fixtures/consumer/build.gradle
 test/fixtures/live/**/build.gradle
 test/fixtures/consumer-partial/a.gradle
+docs/

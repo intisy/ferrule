@@ -73,11 +73,13 @@ static int read_module(const cJSON *entry, const char *name, fr_module *out, fr_
     }
     const cJSON *gradle = cJSON_GetObjectItemCaseSensitive(entry, "gradle");
     if (gradle != NULL) {
+        char gradle_path[288];
+        snprintf(gradle_path, sizeof gradle_path, "%s.gradle", path);
         const char *coordinate = NULL;
-        if (fr_json_string(gradle, "coordinate", path, &coordinate, err) != FR_OK) return FR_ERR;
+        if (fr_json_string(gradle, "coordinate", gradle_path, &coordinate, err) != FR_OK) return FR_ERR;
         out->gradle_coordinate = duplicate(coordinate);
         if (out->gradle_coordinate == NULL) {
-            fr_error_set(err, "out of memory reading %s.gradle.coordinate", path);
+            fr_error_set(err, "out of memory reading %s.coordinate", gradle_path);
             return FR_ERR;
         }
     }
@@ -85,6 +87,7 @@ static int read_module(const cJSON *entry, const char *name, fr_module *out, fr_
 }
 
 static int project_from_json(const cJSON *root, const char *file_path, fr_project *out, fr_error *err) {
+    memset(out, 0, sizeof *out);
     if (check_schema(root, file_path, err) != FR_OK) return FR_ERR;
 
     const char *project_name = NULL;

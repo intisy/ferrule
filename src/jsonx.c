@@ -7,6 +7,7 @@
 #include <string.h>
 
 static char *duplicate(const char *text) {
+    if (text == NULL) return NULL;
     size_t length = strlen(text) + 1;
     char *copy = malloc(length);
     if (copy != NULL) memcpy(copy, text, length);

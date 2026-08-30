@@ -40,6 +40,11 @@ static int gradle_render(void *state, const fr_consumer *consumer, const fr_reso
     for (size_t index = 0; index < count; index++) {
         int written = snprintf(cursor, remaining, GRADLE_LINE_FORMAT,
                                consumer->configuration, resolved[index].gradle_coordinate);
+        if (written < 0) {
+            free(text);
+            fr_error_set(err, "failed formatting gradle dependency line %zu", index);
+            return FR_ERR;
+        }
         cursor += written;
         remaining -= (size_t) written;
         if (index + 1 < count) {
