@@ -52,6 +52,12 @@ TEST carries_the_expected_capability(void) {
     PASS();
 }
 
+TEST carries_the_region_markers_for_its_syntax(void) {
+    ASSERT_STR_EQ("// ferrule:begin", FR_LANGUAGE_GRADLE.begin_marker);
+    ASSERT_STR_EQ("// ferrule:end", FR_LANGUAGE_GRADLE.end_marker);
+    PASS();
+}
+
 GREATEST_MAIN_DEFS();
 
 int main(int argc, char **argv) {
@@ -60,5 +66,6 @@ int main(int argc, char **argv) {
     RUN_TEST(renders_empty_text_for_no_modules);
     RUN_TEST(fails_without_a_configuration);
     RUN_TEST(carries_the_expected_capability);
+    RUN_TEST(carries_the_region_markers_for_its_syntax);
     GREATEST_MAIN_END();
 }

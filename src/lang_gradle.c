@@ -53,4 +53,6 @@ static int gradle_render(void *state, const fr_consumer *consumer, const fr_reso
     return FR_OK;
 }
 
-const fr_language_plugin FR_LANGUAGE_GRADLE = { "ferrule.language/gradle", gradle_render, NULL };
+const fr_language_plugin FR_LANGUAGE_GRADLE = {
+    "ferrule.language/gradle", "// ferrule:begin", "// ferrule:end", gradle_render, NULL
+};

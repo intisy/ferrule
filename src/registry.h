@@ -16,6 +16,8 @@ typedef struct fr_resolved fr_resolved;
 
 typedef struct {
     const char *capability;
+    const char *begin_marker;
+    const char *end_marker;
     int (*render)(void *state, const fr_consumer *consumer,
                   const fr_resolved *resolved, size_t count,
                   char **out_text, fr_error *err);

@@ -12,9 +12,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define FR_REGION_BEGIN "// ferrule:begin"
-#define FR_REGION_END "// ferrule:end"
-
 static char *manifest_directory(const char *manifest_path) {
     const char *last_slash = strrchr(manifest_path, '/');
     const char *last_backslash = strrchr(manifest_path, '\\');
@@ -55,13 +52,15 @@ static int report_adopt(fr_sync_report *report, char *path, fr_error *err) {
     return FR_OK;
 }
 
-static int build_registry(fr_registry **out, fr_error *err) {
+static int build_registry(fr_manifest *manifest, fr_registry **out, fr_error *err) {
     fr_registry *registry = fr_registry_create();
     if (registry == NULL) {
         fr_error_set(err, "out of memory creating the plugin registry");
         return FR_ERR;
     }
-    if (fr_registry_add_source(registry, &FR_SOURCE_PATH, err) != FR_OK) {
+    fr_source_plugin path_source = FR_SOURCE_PATH;
+    path_source.state = manifest;
+    if (fr_registry_add_source(registry, &path_source, err) != FR_OK) {
         fr_registry_destroy(registry);
         return FR_ERR;
     }
@@ -73,7 +72,7 @@ static int build_registry(fr_registry **out, fr_error *err) {
     return FR_OK;
 }
 
-static int sync_consumer(const fr_manifest *manifest, const fr_consumer *consumer,
+static int sync_consumer(const fr_consumer *consumer,
                          const char *manifest_path, const char *manifest_dir,
                          const fr_registry *registry, int write,
                          fr_sync_report *report, fr_error *err) {
@@ -85,7 +84,7 @@ static int sync_consumer(const fr_manifest *manifest, const fr_consumer *consume
 
     fr_resolved *resolved = NULL;
     size_t count = 0;
-    if (fr_resolve_consumer(manifest, consumer, manifest_dir, registry, &resolved, &count, err) != FR_OK) {
+    if (fr_resolve_consumer(consumer, manifest_dir, registry, &resolved, &count, err) != FR_OK) {
         wrap_error_with_path(err, manifest_path);
         free(target_path);
         return FR_ERR;
@@ -119,7 +118,8 @@ static int sync_consumer(const fr_manifest *manifest, const fr_consumer *consume
     }
 
     char *replaced = NULL;
-    if (fr_region_replace(original_text, FR_REGION_BEGIN, FR_REGION_END, rendered, &replaced, err) != FR_OK) {
+    if (fr_region_replace(original_text, language->begin_marker, language->end_marker,
+                          rendered, &replaced, err) != FR_OK) {
         wrap_error_with_path(err, target_path);
         free(original_text);
         free(rendered);
@@ -160,7 +160,7 @@ int fr_sync(const char *manifest_path, int write, fr_sync_report *report, fr_err
     }
 
     fr_registry *registry = NULL;
-    if (build_registry(&registry, err) != FR_OK) {
+    if (build_registry(&manifest, &registry, err) != FR_OK) {
         free(manifest_dir);
         fr_manifest_free(&manifest);
         return FR_ERR;
@@ -168,7 +168,7 @@ int fr_sync(const char *manifest_path, int write, fr_sync_report *report, fr_err
 
     int result = FR_OK;
     for (size_t index = 0; index < manifest.consumer_count; index++) {
-        if (sync_consumer(&manifest, &manifest.consumers[index], manifest_path, manifest_dir,
+        if (sync_consumer(&manifest.consumers[index], manifest_path, manifest_dir,
                           registry, write, report, err) != FR_OK) {
             result = FR_ERR;
             break;
