@@ -1,5 +1,4 @@
 #include "http.h"
-#include "error.h"
 
 static fr_http_fn ACTIVE_BACKEND = fr_http_backend_get;
 
@@ -15,12 +14,3 @@ int fr_http_get(const char *url, const fr_http_header *headers, size_t header_co
     *out_length = 0;
     return ACTIVE_BACKEND(url, headers, header_count, out_body, out_length, err);
 }
-
-#if !defined(FERRULE_HAVE_HTTP_BACKEND)
-int fr_http_backend_get(const char *url, const fr_http_header *headers, size_t header_count,
-                        char **out_body, size_t *out_length, fr_error *err) {
-    (void) url; (void) headers; (void) header_count; (void) out_body; (void) out_length;
-    fr_error_set(err, "this build has no HTTP backend");
-    return FR_ERR;
-}
-#endif

@@ -18,12 +18,29 @@ add_library(ferrule_vendor STATIC vendor/cJSON/cJSON.c)
 target_include_directories(ferrule_vendor PUBLIC vendor/cJSON)
 
 file(GLOB FERRULE_CORE_SOURCES CONFIGURE_DEPENDS src/*.c)
-list(REMOVE_ITEM FERRULE_CORE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/main.c)
+list(REMOVE_ITEM FERRULE_CORE_SOURCES
+     ${CMAKE_CURRENT_SOURCE_DIR}/src/main.c
+     ${CMAKE_CURRENT_SOURCE_DIR}/src/http_winhttp.c
+     ${CMAKE_CURRENT_SOURCE_DIR}/src/http_curl.c)
+
+if(WIN32)
+    list(APPEND FERRULE_CORE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/http_winhttp.c)
+else()
+    list(APPEND FERRULE_CORE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/http_curl.c)
+endif()
 
 add_library(ferrule_core STATIC ${FERRULE_CORE_SOURCES})
 target_compile_options(ferrule_core PRIVATE ${FERRULE_WARNING_FLAGS})
 target_include_directories(ferrule_core PUBLIC src vendor/cJSON)
 target_link_libraries(ferrule_core PUBLIC ferrule_vendor)
+
+target_compile_definitions(ferrule_core PRIVATE FERRULE_HAVE_HTTP_BACKEND)
+if(WIN32)
+    target_link_libraries(ferrule_core PUBLIC winhttp)
+else()
+    find_package(CURL REQUIRED)
+    target_link_libraries(ferrule_core PUBLIC CURL::libcurl)
+endif()
 
 add_executable(ferrule src/main.c)
 target_link_libraries(ferrule PRIVATE ferrule_core)
