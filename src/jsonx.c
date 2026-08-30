@@ -14,6 +14,7 @@ static char *duplicate(const char *text) {
 }
 
 int fr_json_read_file(const char *path, cJSON **out, fr_error *err) {
+    *out = NULL;
     FILE *file = fopen(path, "rb");
     if (file == NULL) {
         fr_error_set(err, "cannot open \"%s\"", path);
@@ -103,6 +104,11 @@ int fr_json_array_of_strings(const cJSON *object, const char *key, const char *p
             return FR_ERR;
         }
         items[index] = duplicate(entry->valuestring);
+        if (items[index] == NULL) {
+            fr_string_array_free(items, (size_t) index);
+            fr_error_set(err, "out of memory reading %s.%s", path, key);
+            return FR_ERR;
+        }
     }
     *out = items;
     *count = (size_t) size;
