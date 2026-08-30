@@ -11,30 +11,37 @@ static const char *line_start(const char *base, const char *pos) {
     return pos;
 }
 
-/* Scans replacement into indented lines, prefixing each with indent_start[0..indent_len).
-   Called once with dest == NULL to size the output, then once more to fill it, so the
-   two passes can never disagree about how many bytes a line contributes. */
-static size_t emit_region_body(char *dest, const char *replacement,
-                               const char *indent_start, size_t indent_len) {
-    if (replacement[0] == '\0') return 0;
+/* Called once with dest == NULL to size the output, then once more to fill it: the same
+   loop drives both passes, so they cannot disagree about how many bytes a line contributes. */
+static size_t emit_region_body(char *dest, const char *replacement, size_t replacement_len,
+                               const char *indent_start, size_t indent_len,
+                               const char *terminator, size_t terminator_len) {
+    if (replacement_len == 0) return 0;
 
     size_t written = 0;
     const char *cursor = replacement;
+    const char *replacement_end = replacement + replacement_len;
     for (;;) {
-        const char *newline = strchr(cursor, '\n');
-        size_t line_len = newline != NULL ? (size_t) (newline - cursor) : strlen(cursor);
+        const char *newline = memchr(cursor, '\n', (size_t) (replacement_end - cursor));
+        size_t line_len = newline != NULL ? (size_t) (newline - cursor) : (size_t) (replacement_end - cursor);
 
         if (dest != NULL) memcpy(dest + written, indent_start, indent_len);
         written += indent_len;
         if (dest != NULL) memcpy(dest + written, cursor, line_len);
         written += line_len;
-        if (dest != NULL) dest[written] = '\n';
-        written += 1;
+        if (dest != NULL) memcpy(dest + written, terminator, terminator_len);
+        written += terminator_len;
 
         if (newline == NULL) break;
         cursor = newline + 1;
     }
     return written;
+}
+
+static size_t trim_one_trailing_terminator(const char *text, size_t length) {
+    if (length >= 2 && text[length - 2] == '\r' && text[length - 1] == '\n') return length - 2;
+    if (length >= 1 && text[length - 1] == '\n') return length - 1;
+    return length;
 }
 
 int fr_region_replace(const char *original, const char *begin_marker, const char *end_marker,
@@ -61,10 +68,16 @@ int fr_region_replace(const char *original, const char *begin_marker, const char
     const char *prefix_end = begin_newline != NULL ? begin_newline + 1 : begin_marker_end;
     size_t prefix_len = (size_t) (prefix_end - original);
 
+    int uses_crlf = begin_newline != NULL && begin_newline > original && begin_newline[-1] == '\r';
+    const char *terminator = uses_crlf ? "\r\n" : "\n";
+    size_t terminator_len = uses_crlf ? 2 : 1;
+
     const char *suffix_start = line_start(original, end_pos);
     size_t suffix_len = strlen(suffix_start);
 
-    size_t body_len = emit_region_body(NULL, replacement, indent_start, indent_len);
+    size_t replacement_len = trim_one_trailing_terminator(replacement, strlen(replacement));
+    size_t body_len = emit_region_body(NULL, replacement, replacement_len, indent_start, indent_len,
+                                       terminator, terminator_len);
 
     char *buffer = malloc(prefix_len + body_len + suffix_len + 1);
     if (buffer == NULL) {
@@ -73,7 +86,8 @@ int fr_region_replace(const char *original, const char *begin_marker, const char
     }
 
     memcpy(buffer, original, prefix_len);
-    emit_region_body(buffer + prefix_len, replacement, indent_start, indent_len);
+    emit_region_body(buffer + prefix_len, replacement, replacement_len, indent_start, indent_len,
+                     terminator, terminator_len);
     memcpy(buffer + prefix_len + body_len, suffix_start, suffix_len);
     buffer[prefix_len + body_len + suffix_len] = '\0';
 

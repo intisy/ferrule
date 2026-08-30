@@ -69,6 +69,46 @@ TEST fails_when_the_end_marker_precedes_the_begin_marker(void) {
     PASS();
 }
 
+TEST joins_generated_lines_with_the_files_own_crlf_terminator(void) {
+    const char *original =
+        "dependencies {\r\n"
+        "    // ferrule:begin\r\n"
+        "    old line\r\n"
+        "    // ferrule:end\r\n"
+        "}\r\n";
+    char *out = NULL; fr_error err;
+    ASSERT_EQ(FR_OK, fr_region_replace(original, "// ferrule:begin", "// ferrule:end",
+                                       "new line\nsecond line", &out, &err));
+    ASSERT_STR_EQ(
+        "dependencies {\r\n"
+        "    // ferrule:begin\r\n"
+        "    new line\r\n"
+        "    second line\r\n"
+        "    // ferrule:end\r\n"
+        "}\r\n", out);
+    free(out);
+    PASS();
+}
+
+TEST trims_one_trailing_newline_from_the_replacement(void) {
+    const char *original =
+        "// ferrule:begin\n"
+        "old\n"
+        "// ferrule:end\n";
+    char *out_with_newline = NULL;
+    char *out_without_newline = NULL;
+    fr_error err;
+    ASSERT_EQ(FR_OK, fr_region_replace(original, "// ferrule:begin", "// ferrule:end",
+                                       "line\n", &out_with_newline, &err));
+    ASSERT_EQ(FR_OK, fr_region_replace(original, "// ferrule:begin", "// ferrule:end",
+                                       "line", &out_without_newline, &err));
+    ASSERT_STR_EQ(out_without_newline, out_with_newline);
+    ASSERT_STR_EQ("// ferrule:begin\nline\n// ferrule:end\n", out_with_newline);
+    free(out_with_newline);
+    free(out_without_newline);
+    PASS();
+}
+
 GREATEST_MAIN_DEFS();
 
 int main(int argc, char **argv) {
@@ -79,5 +119,7 @@ int main(int argc, char **argv) {
     RUN_TEST(fails_when_the_begin_marker_is_absent);
     RUN_TEST(fails_when_the_end_marker_is_absent);
     RUN_TEST(fails_when_the_end_marker_precedes_the_begin_marker);
+    RUN_TEST(joins_generated_lines_with_the_files_own_crlf_terminator);
+    RUN_TEST(trims_one_trailing_newline_from_the_replacement);
     GREATEST_MAIN_END();
 }
