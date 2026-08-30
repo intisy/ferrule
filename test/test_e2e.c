@@ -203,17 +203,29 @@ static char *extract_generated_region(const char *text) {
     return region;
 }
 
+static int GITHUB_STUB_CALLS = 0;
+
 /* Serves the real producer fixture's text, read fresh from disk on every
    call, so this stays byte-identical to what the "path" source reads
    directly and cannot drift into a hand-duplicated copy. */
 static int github_stub_get(const char *url, const fr_http_header *headers, size_t header_count,
                            char **out_body, size_t *out_length, fr_error *err) {
     (void) url; (void) headers; (void) header_count;
+    GITHUB_STUB_CALLS++;
     char *text = NULL;
     if (fr_file_read_text("test/fixtures/producer/ferrule.json", &text, err) != FR_OK) return FR_ERR;
     *out_length = strlen(text);
     *out_body = text;
     return FR_OK;
+}
+
+static int github_cache_entry_exists(void) {
+    char path[700];
+    snprintf(path, sizeof path, "%s/intisy-ai/basekit/5.0.0/ferrule.json", e2e_cache_root());
+    FILE *probe = fopen(path, "rb");
+    if (probe == NULL) return 0;
+    fclose(probe);
+    return 1;
 }
 
 TEST github_source_matches_path_source(void) {
@@ -280,6 +292,66 @@ TEST github_source_matches_path_source(void) {
     PASS();
 }
 
+/* --no-cache must bypass both sides of the cache, not just the read: a test
+   that only counted fetches would still pass if the write leaked and later
+   contaminated a cached run. Each phase starts from a removed cache entry so
+   the disabled-cache half and the enabled-cache half cannot contaminate
+   each other's backend-call counts. */
+TEST no_cache_bypasses_both_the_read_and_the_write(void) {
+    remove_e2e_tree();
+    setup_e2e_tree();
+
+    const char *root = e2e_temp_root();
+    char github_manifest[700];
+    snprintf(github_manifest, sizeof github_manifest, "%s/github/ferrule-github.json", root);
+
+#ifdef _WIN32
+    _putenv_s("FERRULE_CACHE_DIR", e2e_cache_root());
+#else
+    setenv("FERRULE_CACHE_DIR", e2e_cache_root(), 1);
+#endif
+    fr_http_fn original_backend = fr_http_set_backend(github_stub_get);
+
+    fr_error err;
+    fr_sync_report report;
+
+    GITHUB_STUB_CALLS = 0;
+    int first_no_cache = fr_sync(github_manifest, 1, 0, &report, &err);
+    fr_sync_report_free(&report);
+    int second_no_cache = fr_sync(github_manifest, 1, 0, &report, &err);
+    fr_sync_report_free(&report);
+    int calls_without_cache = GITHUB_STUB_CALLS;
+    int entry_written_without_cache = github_cache_entry_exists();
+
+    remove_github_cache_entry();
+
+    GITHUB_STUB_CALLS = 0;
+    int first_with_cache = fr_sync(github_manifest, 1, 1, &report, &err);
+    fr_sync_report_free(&report);
+    int second_with_cache = fr_sync(github_manifest, 1, 1, &report, &err);
+    fr_sync_report_free(&report);
+    int calls_with_cache = GITHUB_STUB_CALLS;
+
+    fr_http_set_backend(original_backend);
+#ifdef _WIN32
+    _putenv_s("FERRULE_CACHE_DIR", "");
+#else
+    unsetenv("FERRULE_CACHE_DIR");
+#endif
+
+    ASSERT_EQ(FR_OK, first_no_cache);
+    ASSERT_EQ(FR_OK, second_no_cache);
+    ASSERT_EQ(2, calls_without_cache);
+    ASSERT_EQ(0, entry_written_without_cache);
+
+    ASSERT_EQ(FR_OK, first_with_cache);
+    ASSERT_EQ(FR_OK, second_with_cache);
+    ASSERT_EQ(1, calls_with_cache);
+
+    remove_e2e_tree();
+    PASS();
+}
+
 GREATEST_MAIN_DEFS();
 
 int main(int argc, char **argv) {
@@ -288,5 +360,6 @@ int main(int argc, char **argv) {
     RUN_TEST(the_second_run_changes_nothing);
     RUN_TEST(check_names_every_drifted_consumer);
     RUN_TEST(github_source_matches_path_source);
+    RUN_TEST(no_cache_bypasses_both_the_read_and_the_write);
     GREATEST_MAIN_END();
 }
