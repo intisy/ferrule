@@ -6,6 +6,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+static const char *TEMPLATE =
+    "dependencies {\n"
+    "    // ferrule:begin\n"
+    "    // ferrule:end\n"
+    "    testImplementation \"junit\"\n"
+    "}\n";
+
 static fr_resolved two_modules[2];
 
 static cJSON *block_with_coordinate(const char *coordinate) {
@@ -28,27 +35,37 @@ static void teardown(void) {
     cJSON_Delete(two_modules[1].block);
 }
 
-TEST renders_one_line_per_module_in_order(void) {
+static int apply(const fr_consumer *consumer, const fr_resolved *resolved, size_t count,
+                 const char *original, char **out_text, fr_error *err) {
+    return FR_LANGUAGE_GRADLE.apply(FR_LANGUAGE_GRADLE.state, consumer, resolved, count,
+                                    original, out_text, err);
+}
+
+TEST writes_one_line_per_module_in_order(void) {
     setup();
     fr_consumer consumer = {0};
     consumer.configuration = "githubImplementation";
     char *text = NULL; fr_error err;
-    ASSERT_EQ(FR_OK, FR_LANGUAGE_GRADLE.render(FR_LANGUAGE_GRADLE.state, &consumer,
-                                               two_modules, 2, &text, &err));
+    ASSERT_EQ(FR_OK, apply(&consumer, two_modules, 2, TEMPLATE, &text, &err));
     ASSERT_STR_EQ(
-        "githubImplementation \"intisy-ai:basekit:5.0.0:contracts\"\n"
-        "githubImplementation \"intisy-ai:basekit:5.0.0:ir\"", text);
+        "dependencies {\n"
+        "    // ferrule:begin\n"
+        "    githubImplementation \"intisy-ai:basekit:5.0.0:contracts\"\n"
+        "    githubImplementation \"intisy-ai:basekit:5.0.0:ir\"\n"
+        "    // ferrule:end\n"
+        "    testImplementation \"junit\"\n"
+        "}\n", text);
     free(text);
     teardown();
     PASS();
 }
 
-TEST renders_empty_text_for_no_modules(void) {
+TEST empties_the_region_for_no_modules(void) {
     fr_consumer consumer = {0};
     consumer.configuration = "githubImplementation";
     char *text = NULL; fr_error err;
-    ASSERT_EQ(FR_OK, FR_LANGUAGE_GRADLE.render(FR_LANGUAGE_GRADLE.state, &consumer, NULL, 0, &text, &err));
-    ASSERT_STR_EQ("", text);
+    ASSERT_EQ(FR_OK, apply(&consumer, NULL, 0, TEMPLATE, &text, &err));
+    ASSERT_STR_EQ(TEMPLATE, text);
     free(text);
     PASS();
 }
@@ -56,8 +73,33 @@ TEST renders_empty_text_for_no_modules(void) {
 TEST fails_without_a_configuration(void) {
     fr_consumer consumer = {0};
     char *text = NULL; fr_error err;
-    ASSERT_EQ(FR_ERR, FR_LANGUAGE_GRADLE.render(FR_LANGUAGE_GRADLE.state, &consumer, NULL, 0, &text, &err));
+    ASSERT_EQ(FR_ERR, apply(&consumer, NULL, 0, TEMPLATE, &text, &err));
     ASSERT(strstr(err.message, "configuration") != NULL);
+    PASS();
+}
+
+TEST names_the_module_whose_block_has_no_coordinate(void) {
+    fr_resolved bare;
+    bare.project = "intisy-ai/basekit";
+    bare.module = "loader";
+    bare.block = cJSON_CreateObject();
+    fr_consumer consumer = {0};
+    consumer.configuration = "githubImplementation";
+    char *text = NULL; fr_error err;
+    ASSERT_EQ(FR_ERR, apply(&consumer, &bare, 1, TEMPLATE, &text, &err));
+    ASSERT(strstr(err.message, "modules.loader.gradle") != NULL);
+    cJSON_Delete(bare.block);
+    PASS();
+}
+
+TEST fails_when_the_target_carries_no_region(void) {
+    setup();
+    fr_consumer consumer = {0};
+    consumer.configuration = "githubImplementation";
+    char *text = NULL; fr_error err;
+    ASSERT_EQ(FR_ERR, apply(&consumer, two_modules, 2, "dependencies {\n}\n", &text, &err));
+    ASSERT(strstr(err.message, "// ferrule:begin") != NULL);
+    teardown();
     PASS();
 }
 
@@ -66,20 +108,15 @@ TEST carries_the_expected_capability(void) {
     PASS();
 }
 
-TEST carries_the_region_markers_for_its_syntax(void) {
-    ASSERT_STR_EQ("// ferrule:begin", FR_LANGUAGE_GRADLE.begin_marker);
-    ASSERT_STR_EQ("// ferrule:end", FR_LANGUAGE_GRADLE.end_marker);
-    PASS();
-}
-
 GREATEST_MAIN_DEFS();
 
 int main(int argc, char **argv) {
     GREATEST_MAIN_BEGIN();
-    RUN_TEST(renders_one_line_per_module_in_order);
-    RUN_TEST(renders_empty_text_for_no_modules);
+    RUN_TEST(writes_one_line_per_module_in_order);
+    RUN_TEST(empties_the_region_for_no_modules);
     RUN_TEST(fails_without_a_configuration);
+    RUN_TEST(names_the_module_whose_block_has_no_coordinate);
+    RUN_TEST(fails_when_the_target_carries_no_region);
     RUN_TEST(carries_the_expected_capability);
-    RUN_TEST(carries_the_region_markers_for_its_syntax);
     GREATEST_MAIN_END();
 }

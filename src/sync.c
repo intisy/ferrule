@@ -104,33 +104,24 @@ static int sync_consumer(const fr_consumer *consumer, const fr_manifest *manifes
         return FR_ERR;
     }
 
-    char *rendered = NULL;
-    if (language->render(language->state, consumer, resolved, count, &rendered, err) != FR_OK) {
-        wrap_error_with_path(err, manifest_path);
-        fr_resolved_free(resolved, count);
-        free(target_path);
-        return FR_ERR;
-    }
-    fr_resolved_free(resolved, count);
-
     char *original_text = NULL;
     if (fr_file_read_text(target_path, &original_text, err) != FR_OK) {
         wrap_error_with_path(err, target_path);
-        free(rendered);
+        fr_resolved_free(resolved, count);
         free(target_path);
         return FR_ERR;
     }
 
     char *replaced = NULL;
-    if (fr_region_replace(original_text, language->begin_marker, language->end_marker,
-                          rendered, &replaced, err) != FR_OK) {
+    int applied = language->apply(language->state, consumer, resolved, count,
+                                  original_text, &replaced, err);
+    fr_resolved_free(resolved, count);
+    if (applied != FR_OK) {
         wrap_error_with_path(err, target_path);
         free(original_text);
-        free(rendered);
         free(target_path);
         return FR_ERR;
     }
-    free(rendered);
 
     int result = FR_OK;
     if (strcmp(original_text, replaced) != 0) {

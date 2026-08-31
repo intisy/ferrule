@@ -2,11 +2,14 @@
 
 #include "error.h"
 #include "jsonx.h"
+#include "lang_region.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 
 static const char *GRADLE_LINE_FORMAT = "%s \"%s\"";
+static const char *GRADLE_BEGIN_MARKER = "// ferrule:begin";
+static const char *GRADLE_END_MARKER = "// ferrule:end";
 
 static int coordinate_of(const fr_resolved *entry, const char **out, fr_error *err) {
     char path[256];
@@ -14,9 +17,8 @@ static int coordinate_of(const fr_resolved *entry, const char **out, fr_error *e
     return fr_json_string(entry->block, "coordinate", path, out, err);
 }
 
-static int gradle_render(void *state, const fr_consumer *consumer, const fr_resolved *resolved,
+static int gradle_render(const fr_consumer *consumer, const fr_resolved *resolved,
                          size_t count, char **out_text, fr_error *err) {
-    (void) state;
     *out_text = NULL;
 
     if (consumer->configuration == NULL || consumer->configuration[0] == '\0') {
@@ -84,6 +86,11 @@ static int gradle_render(void *state, const fr_consumer *consumer, const fr_reso
     return FR_OK;
 }
 
-const fr_language_plugin FR_LANGUAGE_GRADLE = {
-    "ferrule.language/gradle", "// ferrule:begin", "// ferrule:end", gradle_render, NULL
-};
+static int gradle_apply(void *state, const fr_consumer *consumer, const fr_resolved *resolved,
+                        size_t count, const char *original_text, char **out_text, fr_error *err) {
+    (void) state;
+    return fr_lang_region_apply(GRADLE_BEGIN_MARKER, GRADLE_END_MARKER, gradle_render,
+                                consumer, resolved, count, original_text, out_text, err);
+}
+
+const fr_language_plugin FR_LANGUAGE_GRADLE = { "ferrule.language/gradle", gradle_apply, NULL };
