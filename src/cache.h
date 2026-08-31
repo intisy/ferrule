@@ -13,7 +13,11 @@ int fr_cache_path(const char *project, const char *version, const char *artifact
                   char **out_path, fr_error *err);
 int fr_cache_read(const char *project, const char *version, const char *artifact,
                   char **out_text, fr_error *err);
-void fr_cache_write(const char *project, const char *version, const char *artifact, const char *text);
+/* Writes length bytes, so what is cached is byte-identical to what was
+   fetched and a later hit parses exactly as the fetch did. Bounding the write
+   by strlen instead would silently truncate a body containing a NUL. */
+void fr_cache_write(const char *project, const char *version, const char *artifact,
+                    const char *text, size_t length);
 void fr_cache_set_enabled(int enabled);
 
 #endif

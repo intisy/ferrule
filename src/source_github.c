@@ -77,10 +77,15 @@ static char *build_auth_header_value(void) {
    (so it is only worth caching once it parses) rather than from an existing
    cache hit (already validated when it was written). */
 static int fetch_manifest_text(const char *project, const char *version, const char *url,
-                               char **out_text, int *out_from_network, fr_error *err) {
+                               char **out_text, size_t *out_length, int *out_from_network,
+                               fr_error *err) {
     *out_from_network = 0;
+    *out_length = 0;
     if (fr_cache_read(project, version, url, out_text, err) != FR_OK) return FR_ERR;
-    if (*out_text != NULL) return FR_OK;
+    if (*out_text != NULL) {
+        *out_length = strlen(*out_text);
+        return FR_OK;
+    }
 
     char *auth_value = build_auth_header_value();
     fr_http_header header;
@@ -110,6 +115,7 @@ static int fetch_manifest_text(const char *project, const char *version, const c
     free(body);
 
     *out_text = text;
+    *out_length = length;
     *out_from_network = 1;
     return FR_OK;
 }
@@ -146,15 +152,16 @@ static int source_github_load(void *state, const char *project, const cJSON *blo
     }
 
     char *text = NULL;
+    size_t text_length = 0;
     int from_network = 0;
-    if (fetch_manifest_text(project, version, url, &text, &from_network, err) != FR_OK) {
+    if (fetch_manifest_text(project, version, url, &text, &text_length, &from_network, err) != FR_OK) {
         free(url);
         return FR_ERR;
     }
 
     int result = fr_project_parse(text, url, out, err);
     if (result == FR_OK && from_network) {
-        fr_cache_write(project, version, url, text);
+        fr_cache_write(project, version, url, text, text_length);
     }
     free(text);
     free(url);

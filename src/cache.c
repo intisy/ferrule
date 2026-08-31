@@ -175,7 +175,8 @@ static int rename_into_place(const char *temp_path, const char *final_path) {
    path once the full text is confirmed on disk, so a short write (full disk,
    killed process) never leaves a truncated file where fr_cache_read looks.
    Every step fails silently: a cache write must never fail the caller. */
-void fr_cache_write(const char *project, const char *version, const char *artifact, const char *text) {
+void fr_cache_write(const char *project, const char *version, const char *artifact,
+                    const char *text, size_t length) {
     if (!CACHE_ENABLED) return;
 
     fr_error err;
@@ -192,7 +193,6 @@ void fr_cache_write(const char *project, const char *version, const char *artifa
     FILE *file = fopen(temp_path, "wb");
     if (file == NULL) { free(temp_path); free(path); return; }
 
-    size_t length = strlen(text);
     size_t written = fwrite(text, 1, length, file);
     int close_result = fclose(file);
 

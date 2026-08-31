@@ -30,6 +30,13 @@ static void clear_cache_dir(void) {
     fr_test_set_env("FERRULE_CACHE_DIR", NULL);
 }
 
+/* Only the byte-faithfulness test cares about the length argument; everywhere
+   else the text is plain and its length is just its strlen. */
+static void write_cache_text(const char *project, const char *version,
+                             const char *artifact, const char *text) {
+    fr_cache_write(project, version, artifact, text, strlen(text));
+}
+
 static char *dup_or_null(const char *text) {
     if (text == NULL) return NULL;
     size_t size = strlen(text) + 1;
@@ -115,7 +122,7 @@ TEST round_trips_a_written_manifest(void) {
     isolate_cache_dir();
     const char *root = test_cache_root();
 
-    fr_cache_write("intisy-ai/basekit", "5.0.0", ARTIFACT, "{\"schema\":1}");
+    write_cache_text("intisy-ai/basekit", "5.0.0", ARTIFACT, "{\"schema\":1}");
     fr_error err;
     char *text = NULL;
     ASSERT_EQ(FR_OK, fr_cache_read("intisy-ai/basekit", "5.0.0", ARTIFACT, &text, &err));
@@ -141,8 +148,8 @@ TEST keeps_two_artifacts_of_one_project_and_version_apart(void) {
     isolate_cache_dir();
     const char *root = test_cache_root();
 
-    fr_cache_write("intisy-ai/basekit", "5.0.0", ARTIFACT, "{\"origin\":\"upstream\"}");
-    fr_cache_write("intisy-ai/basekit", "5.0.0", FORK_ARTIFACT, "{\"origin\":\"fork\"}");
+    write_cache_text("intisy-ai/basekit", "5.0.0", ARTIFACT, "{\"origin\":\"upstream\"}");
+    write_cache_text("intisy-ai/basekit", "5.0.0", FORK_ARTIFACT, "{\"origin\":\"fork\"}");
 
     fr_error err;
     char *upstream = NULL;
@@ -163,6 +170,36 @@ TEST keeps_two_artifacts_of_one_project_and_version_apart(void) {
     PASS();
 }
 
+/* A cached entry must be byte-identical to the body that was fetched, so that
+   a hit parses exactly as the fetch did. A body carrying a NUL is the case
+   that separates writing by length from writing to the first NUL. */
+TEST writes_the_whole_body_including_an_embedded_nul(void) {
+    isolate_cache_dir();
+    const char *root = test_cache_root();
+
+    const char body[] = "{\"a\":1}\0trailing";
+    const size_t body_length = sizeof body - 1;
+    fr_cache_write("intisy-ai/basekit", "5.0.0", ARTIFACT, body, body_length);
+
+    fr_error err;
+    char *path = NULL;
+    ASSERT_EQ(FR_OK, fr_cache_path("intisy-ai/basekit", "5.0.0", ARTIFACT, &path, &err));
+
+    FILE *file = fopen(path, "rb");
+    ASSERT(file != NULL);
+    char written[64];
+    size_t read_count = fread(written, 1, sizeof written, file);
+    fclose(file);
+    free(path);
+
+    ASSERT_EQ((int) body_length, (int) read_count);
+    ASSERT_EQ(0, memcmp(body, written, body_length));
+
+    fr_test_remove_tree(root);
+    clear_cache_dir();
+    PASS();
+}
+
 /* Direct proof of the atomicity fix: pre-populate the cache entry with known
    good content, then force the next write's temp file to be un-openable (by
    pre-creating a directory at the exact ".tmp" path fr_cache_write uses) so
@@ -174,7 +211,7 @@ TEST preserves_the_existing_manifest_when_a_write_cannot_complete(void) {
     const char *project = "intisy-ai/atomic-guard";
     const char *version = "1.0.0";
 
-    fr_cache_write(project, version, ARTIFACT, "{\"good\":true}");
+    write_cache_text(project, version, ARTIFACT, "{\"good\":true}");
 
     fr_error err;
     char *final_path = NULL;
@@ -184,7 +221,7 @@ TEST preserves_the_existing_manifest_when_a_write_cannot_complete(void) {
     snprintf(blocker_path, sizeof blocker_path, "%s.tmp", final_path);
     ASSERT_EQ(0, fr_test_make_directory(blocker_path));
 
-    fr_cache_write(project, version, ARTIFACT, "{\"corrupt");
+    write_cache_text(project, version, ARTIFACT, "{\"corrupt");
 
     char *text = NULL;
     ASSERT_EQ(FR_OK, fr_cache_read(project, version, ARTIFACT, &text, &err));
@@ -251,6 +288,7 @@ int main(int argc, char **argv) {
     RUN_TEST(reports_a_miss_without_an_error);
     RUN_TEST(round_trips_a_written_manifest);
     RUN_TEST(keeps_two_artifacts_of_one_project_and_version_apart);
+    RUN_TEST(writes_the_whole_body_including_an_embedded_nul);
     RUN_TEST(preserves_the_existing_manifest_when_a_write_cannot_complete);
 #ifdef _WIN32
     RUN_TEST(resolves_the_localappdata_fallback_when_no_override_is_set);
