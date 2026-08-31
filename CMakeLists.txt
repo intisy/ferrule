@@ -46,9 +46,17 @@ target_link_libraries(ferrule PRIVATE ferrule_core)
 target_compile_options(ferrule PRIVATE ${FERRULE_WARNING_FLAGS})
 
 enable_testing()
-add_library(ferrule_test_support STATIC test/support.c)
+add_library(ferrule_test_support STATIC test/support.c test/http_server.c)
 target_include_directories(ferrule_test_support PUBLIC test)
 target_compile_options(ferrule_test_support PRIVATE ${FERRULE_WARNING_FLAGS})
+
+if(WIN32)
+    target_link_libraries(ferrule_test_support PUBLIC ws2_32)
+else()
+    set(THREADS_PREFER_PTHREAD_FLAG ON)
+    find_package(Threads REQUIRED)
+    target_link_libraries(ferrule_test_support PUBLIC Threads::Threads)
+endif()
 
 file(GLOB FERRULE_TESTS CONFIGURE_DEPENDS test/test_*.c)
 foreach(test_file ${FERRULE_TESTS})
