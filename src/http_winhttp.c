@@ -1,6 +1,7 @@
 #include "http.h"
 
 #include "error.h"
+#include "url.h"
 
 #include <windows.h>
 #include <winhttp.h>
@@ -38,14 +39,12 @@ static int is_redirect_status(DWORD status) {
     return status == 301 || status == 302 || status == 303 || status == 307 || status == 308;
 }
 
-typedef struct { wchar_t *host; INTERNET_PORT port; INTERNET_SCHEME scheme; } fr_origin;
-
 /* One attempt at one URL: connects, sends the request with the caller's
-   headers attached only when the scheme, host and port still match the very
-   first request (rule 2), and either returns the body, a redirect location,
-   or an error. Handles are per attempt because the target host can change
-   between them. */
-static fetch_outcome fetch_once(const char *current_url, fr_origin *origin,
+   headers attached only when the current url still shares an origin with the
+   very first request (rule 2), and either returns the body, a redirect
+   location, or an error. Handles are per attempt because the target host can
+   change between them. */
+static fetch_outcome fetch_once(const char *current_url, const char *original_url,
                                 const fr_http_header *headers, size_t header_count,
                                 char **out_body, size_t *out_length,
                                 char **out_redirect_url, fr_error *err) {
@@ -84,12 +83,6 @@ static fetch_outcome fetch_once(const char *current_url, fr_origin *origin,
         goto cleanup;
     }
 
-    if (origin->host == NULL) {
-        origin->host = host;
-        origin->port = components.nPort;
-        origin->scheme = components.nScheme;
-    }
-
     session = WinHttpOpen(L"ferrule", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
                           WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (session == NULL) {
@@ -117,8 +110,7 @@ static fetch_outcome fetch_once(const char *current_url, fr_origin *origin,
         goto cleanup;
     }
 
-    if (origin->scheme == components.nScheme && origin->port == components.nPort &&
-        _wcsicmp(origin->host, host) == 0) {
+    if (fr_url_same_origin(original_url, current_url)) {
         for (size_t index = 0; index < header_count; index++) {
             char line[1024];
             int wanted = snprintf(line, sizeof line, "%s: %s", headers[index].name, headers[index].value);
@@ -127,9 +119,15 @@ static fetch_outcome fetch_once(const char *current_url, fr_origin *origin,
                 goto cleanup;
             }
             wchar_t *wide_line = widen(line);
-            if (wide_line != NULL) {
-                WinHttpAddRequestHeaders(request, wide_line, (DWORD) -1, WINHTTP_ADDREQ_FLAG_ADD);
-                free(wide_line);
+            if (wide_line == NULL) {
+                fr_error_set(err, "could not encode header \"%s\"", headers[index].name);
+                goto cleanup;
+            }
+            BOOL added = WinHttpAddRequestHeaders(request, wide_line, (DWORD) -1, WINHTTP_ADDREQ_FLAG_ADD);
+            free(wide_line);
+            if (!added) {
+                fr_error_set(err, "could not send header \"%s\" to %s", headers[index].name, current_url);
+                goto cleanup;
             }
         }
     }
@@ -232,7 +230,7 @@ cleanup:
     if (session != NULL) WinHttpCloseHandle(session);
     free(wide_url);
     free(path);
-    if (host != NULL && host != origin->host) free(host);
+    free(host);
     return outcome;
 }
 
@@ -244,15 +242,11 @@ int fr_http_backend_get(const char *url, const fr_http_header *headers, size_t h
         return FR_ERR;
     }
 
-    fr_origin origin;
-    origin.host = NULL;
-    origin.port = 0;
-    origin.scheme = INTERNET_SCHEME_HTTP;
     fetch_outcome result;
     int attempt = 0;
     do {
         char *redirect_url = NULL;
-        result = fetch_once(current_url, &origin, headers, header_count,
+        result = fetch_once(current_url, url, headers, header_count,
                             out_body, out_length, &redirect_url, err);
         if (result == FETCH_REDIRECT) {
             free(current_url);
@@ -266,6 +260,5 @@ int fr_http_backend_get(const char *url, const fr_http_header *headers, size_t h
     }
 
     free(current_url);
-    free(origin.host);
     return result == FETCH_DONE ? FR_OK : FR_ERR;
 }
