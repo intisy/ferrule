@@ -6,6 +6,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+static const char *ARTIFACT =
+    "https://github.com/intisy-ai/basekit/releases/download/5.0.0/ferrule.json";
+static const char *FORK_ARTIFACT =
+    "https://github.com/someone-else/basekit/releases/download/5.0.0/ferrule.json";
+
 /* Unique per process (not just per test) so a crash mid-test or a second CI job
    running this binary concurrently on the same machine can never share, and thus
    never contend over, another run's cache entries. */
@@ -38,7 +43,7 @@ TEST rejects_a_project_that_would_escape_the_cache_root(void) {
 
     fr_error err;
     char *path = NULL;
-    ASSERT_EQ(FR_ERR, fr_cache_path("../evil", "1.0.0", &path, &err));
+    ASSERT_EQ(FR_ERR, fr_cache_path("../evil", "1.0.0", ARTIFACT, &path, &err));
     ASSERT(strstr(err.message, "..") != NULL);
     ASSERT(path == NULL);
 
@@ -51,11 +56,28 @@ TEST rejects_a_component_with_a_trailing_dot(void) {
 
     fr_error err;
     char *path = NULL;
-    ASSERT_EQ(FR_ERR, fr_cache_path("intisy-ai/basekit.", "1.0.0", &path, &err));
+    ASSERT_EQ(FR_ERR, fr_cache_path("intisy-ai/basekit.", "1.0.0", ARTIFACT, &path, &err));
     ASSERT(path == NULL);
 
     path = NULL;
-    ASSERT_EQ(FR_ERR, fr_cache_path("intisy-ai/basekit", "1.0.0.", &path, &err));
+    ASSERT_EQ(FR_ERR, fr_cache_path("intisy-ai/basekit", "1.0.0.", ARTIFACT, &path, &err));
+    ASSERT(path == NULL);
+
+    clear_cache_dir();
+    PASS();
+}
+
+TEST rejects_an_entry_that_names_no_artifact(void) {
+    isolate_cache_dir();
+
+    fr_error err;
+    char *path = NULL;
+    ASSERT_EQ(FR_ERR, fr_cache_path("intisy-ai/basekit", "1.0.0", NULL, &path, &err));
+    ASSERT(strstr(err.message, "artifact") != NULL);
+    ASSERT(path == NULL);
+
+    path = NULL;
+    ASSERT_EQ(FR_ERR, fr_cache_path("intisy-ai/basekit", "1.0.0", "", &path, &err));
     ASSERT(path == NULL);
 
     clear_cache_dir();
@@ -70,7 +92,7 @@ TEST rejects_an_oversized_cache_root_rather_than_truncating_it(void) {
 
     fr_error err;
     char *path = NULL;
-    ASSERT_EQ(FR_ERR, fr_cache_path("intisy-ai/basekit", "1.0.0", &path, &err));
+    ASSERT_EQ(FR_ERR, fr_cache_path("intisy-ai/basekit", "1.0.0", ARTIFACT, &path, &err));
     ASSERT(path == NULL);
 
     clear_cache_dir();
@@ -82,7 +104,7 @@ TEST reports_a_miss_without_an_error(void) {
 
     fr_error err;
     char *text = NULL;
-    ASSERT_EQ(FR_OK, fr_cache_read("intisy-ai/absent", "9.9.9", &text, &err));
+    ASSERT_EQ(FR_OK, fr_cache_read("intisy-ai/absent", "9.9.9", ARTIFACT, &text, &err));
     ASSERT(text == NULL);
 
     clear_cache_dir();
@@ -93,10 +115,10 @@ TEST round_trips_a_written_manifest(void) {
     isolate_cache_dir();
     const char *root = test_cache_root();
 
-    fr_cache_write("intisy-ai/basekit", "5.0.0", "{\"schema\":1}");
+    fr_cache_write("intisy-ai/basekit", "5.0.0", ARTIFACT, "{\"schema\":1}");
     fr_error err;
     char *text = NULL;
-    ASSERT_EQ(FR_OK, fr_cache_read("intisy-ai/basekit", "5.0.0", &text, &err));
+    ASSERT_EQ(FR_OK, fr_cache_read("intisy-ai/basekit", "5.0.0", ARTIFACT, &text, &err));
     ASSERT(text != NULL);
     ASSERT_STR_EQ("{\"schema\":1}", text);
     free(text);
@@ -105,6 +127,36 @@ TEST round_trips_a_written_manifest(void) {
        have been renamed into place, not merely written and abandoned. */
     ASSERT_EQ(0, fr_test_count_files(root, "ferrule.json.tmp"));
     ASSERT_EQ(1, fr_test_count_files(root, "ferrule.json"));
+
+    fr_test_remove_tree(root);
+    clear_cache_dir();
+    PASS();
+}
+
+/* Two manifests can name one project id and one version and resolve them from
+   different repositories. Keyed on the pair alone, the second would be served
+   the first's manifest and would render its coordinates, silently and with a
+   successful exit. */
+TEST keeps_two_artifacts_of_one_project_and_version_apart(void) {
+    isolate_cache_dir();
+    const char *root = test_cache_root();
+
+    fr_cache_write("intisy-ai/basekit", "5.0.0", ARTIFACT, "{\"origin\":\"upstream\"}");
+    fr_cache_write("intisy-ai/basekit", "5.0.0", FORK_ARTIFACT, "{\"origin\":\"fork\"}");
+
+    fr_error err;
+    char *upstream = NULL;
+    char *fork = NULL;
+    ASSERT_EQ(FR_OK, fr_cache_read("intisy-ai/basekit", "5.0.0", ARTIFACT, &upstream, &err));
+    ASSERT_EQ(FR_OK, fr_cache_read("intisy-ai/basekit", "5.0.0", FORK_ARTIFACT, &fork, &err));
+    ASSERT(upstream != NULL);
+    ASSERT(fork != NULL);
+    ASSERT_STR_EQ("{\"origin\":\"upstream\"}", upstream);
+    ASSERT_STR_EQ("{\"origin\":\"fork\"}", fork);
+    free(upstream);
+    free(fork);
+
+    ASSERT_EQ(2, fr_test_count_files(root, "ferrule.json"));
 
     fr_test_remove_tree(root);
     clear_cache_dir();
@@ -122,20 +174,20 @@ TEST preserves_the_existing_manifest_when_a_write_cannot_complete(void) {
     const char *project = "intisy-ai/atomic-guard";
     const char *version = "1.0.0";
 
-    fr_cache_write(project, version, "{\"good\":true}");
+    fr_cache_write(project, version, ARTIFACT, "{\"good\":true}");
 
     fr_error err;
     char *final_path = NULL;
-    ASSERT_EQ(FR_OK, fr_cache_path(project, version, &final_path, &err));
+    ASSERT_EQ(FR_OK, fr_cache_path(project, version, ARTIFACT, &final_path, &err));
 
     char blocker_path[512];
     snprintf(blocker_path, sizeof blocker_path, "%s.tmp", final_path);
     ASSERT_EQ(0, fr_test_make_directory(blocker_path));
 
-    fr_cache_write(project, version, "{\"corrupt");
+    fr_cache_write(project, version, ARTIFACT, "{\"corrupt");
 
     char *text = NULL;
-    ASSERT_EQ(FR_OK, fr_cache_read(project, version, &text, &err));
+    ASSERT_EQ(FR_OK, fr_cache_read(project, version, ARTIFACT, &text, &err));
     ASSERT(text != NULL);
     ASSERT_STR_EQ("{\"good\":true}", text);
     free(text);
@@ -155,7 +207,7 @@ TEST resolves_the_localappdata_fallback_when_no_override_is_set(void) {
 
     fr_error err;
     char *path = NULL;
-    ASSERT_EQ(FR_OK, fr_cache_path("intisy-ai/basekit", "1.0.0", &path, &err));
+    ASSERT_EQ(FR_OK, fr_cache_path("intisy-ai/basekit", "1.0.0", ARTIFACT, &path, &err));
     ASSERT(path != NULL);
     char expected_prefix[600];
     snprintf(expected_prefix, sizeof expected_prefix, "%s/ferrule/cache/", test_cache_root());
@@ -175,7 +227,7 @@ TEST resolves_the_xdg_cache_home_fallback_when_no_override_is_set(void) {
 
     fr_error err;
     char *path = NULL;
-    ASSERT_EQ(FR_OK, fr_cache_path("intisy-ai/basekit", "1.0.0", &path, &err));
+    ASSERT_EQ(FR_OK, fr_cache_path("intisy-ai/basekit", "1.0.0", ARTIFACT, &path, &err));
     ASSERT(path != NULL);
     char expected_prefix[600];
     snprintf(expected_prefix, sizeof expected_prefix, "%s/ferrule/", test_cache_root());
@@ -194,9 +246,11 @@ int main(int argc, char **argv) {
     GREATEST_MAIN_BEGIN();
     RUN_TEST(rejects_a_project_that_would_escape_the_cache_root);
     RUN_TEST(rejects_a_component_with_a_trailing_dot);
+    RUN_TEST(rejects_an_entry_that_names_no_artifact);
     RUN_TEST(rejects_an_oversized_cache_root_rather_than_truncating_it);
     RUN_TEST(reports_a_miss_without_an_error);
     RUN_TEST(round_trips_a_written_manifest);
+    RUN_TEST(keeps_two_artifacts_of_one_project_and_version_apart);
     RUN_TEST(preserves_the_existing_manifest_when_a_write_cannot_complete);
 #ifdef _WIN32
     RUN_TEST(resolves_the_localappdata_fallback_when_no_override_is_set);

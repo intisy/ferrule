@@ -79,7 +79,20 @@ static int cache_root_dir(char *out, size_t out_size, fr_error *err) {
     return FR_ERR;
 }
 
-int fr_cache_path(const char *project, const char *version, char **out_path, fr_error *err) {
+/* Hashed rather than spelled out, because an artifact identity is a url and
+   carries characters no filesystem accepts in a path component, at a length no
+   filesystem bounds. FNV-1a. */
+static void artifact_component(const char *artifact, char out[17]) {
+    unsigned long long hash = 14695981039346656037ULL;
+    for (const unsigned char *cursor = (const unsigned char *) artifact; *cursor != '\0'; cursor++) {
+        hash ^= (unsigned long long) *cursor;
+        hash *= 1099511628211ULL;
+    }
+    snprintf(out, 17, "%016llx", hash);
+}
+
+int fr_cache_path(const char *project, const char *version, const char *artifact,
+                  char **out_path, fr_error *err) {
     *out_path = NULL;
     if (!is_safe_component(project, 1)) {
         fr_error_set(err, "project \"%s\" is not a safe cache path component", project);
@@ -89,28 +102,37 @@ int fr_cache_path(const char *project, const char *version, char **out_path, fr_
         fr_error_set(err, "version \"%s\" is not a safe cache path component", version);
         return FR_ERR;
     }
+    if (artifact == NULL || artifact[0] == '\0') {
+        fr_error_set(err, "cache entry for \"%s\" names no artifact", project);
+        return FR_ERR;
+    }
 
     char root[1024];
     if (cache_root_dir(root, sizeof root, err) != FR_OK) return FR_ERR;
 
-    size_t length = strlen(root) + 1 + strlen(project) + 1 + strlen(version) + 1 + strlen("ferrule.json") + 1;
+    char artifact_id[17];
+    artifact_component(artifact, artifact_id);
+
+    size_t length = strlen(root) + 1 + strlen(project) + 1 + strlen(version) + 1
+                  + strlen(artifact_id) + 1 + strlen("ferrule.json") + 1;
     char *path = malloc(length);
     if (path == NULL) {
         fr_error_set(err, "out of memory building cache path");
         return FR_ERR;
     }
-    snprintf(path, length, "%s/%s/%s/ferrule.json", root, project, version);
+    snprintf(path, length, "%s/%s/%s/%s/ferrule.json", root, project, version, artifact_id);
 
     *out_path = path;
     return FR_OK;
 }
 
-int fr_cache_read(const char *project, const char *version, char **out_text, fr_error *err) {
+int fr_cache_read(const char *project, const char *version, const char *artifact,
+                  char **out_text, fr_error *err) {
     *out_text = NULL;
     if (!CACHE_ENABLED) return FR_OK;
 
     char *path = NULL;
-    if (fr_cache_path(project, version, &path, err) != FR_OK) return FR_ERR;
+    if (fr_cache_path(project, version, artifact, &path, err) != FR_OK) return FR_ERR;
 
     FILE *probe = fopen(path, "rb");
     if (probe == NULL) { free(path); return FR_OK; }
@@ -153,12 +175,12 @@ static int rename_into_place(const char *temp_path, const char *final_path) {
    path once the full text is confirmed on disk, so a short write (full disk,
    killed process) never leaves a truncated file where fr_cache_read looks.
    Every step fails silently: a cache write must never fail the caller. */
-void fr_cache_write(const char *project, const char *version, const char *text) {
+void fr_cache_write(const char *project, const char *version, const char *artifact, const char *text) {
     if (!CACHE_ENABLED) return;
 
     fr_error err;
     char *path = NULL;
-    if (fr_cache_path(project, version, &path, &err) != FR_OK) return;
+    if (fr_cache_path(project, version, artifact, &path, &err) != FR_OK) return;
 
     make_parent_directories(path);
 

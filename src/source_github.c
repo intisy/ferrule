@@ -79,7 +79,7 @@ static char *build_auth_header_value(void) {
 static int fetch_manifest_text(const char *project, const char *version, const char *url,
                                char **out_text, int *out_from_network, fr_error *err) {
     *out_from_network = 0;
-    if (fr_cache_read(project, version, out_text, err) != FR_OK) return FR_ERR;
+    if (fr_cache_read(project, version, url, out_text, err) != FR_OK) return FR_ERR;
     if (*out_text != NULL) return FR_OK;
 
     char *auth_value = build_auth_header_value();
@@ -154,7 +154,7 @@ static int source_github_load(void *state, const char *project, const cJSON *blo
 
     int result = fr_project_parse(text, url, out, err);
     if (result == FR_OK && from_network) {
-        fr_cache_write(project, version, text);
+        fr_cache_write(project, version, url, text);
     }
     free(text);
     free(url);

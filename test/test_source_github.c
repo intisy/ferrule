@@ -133,6 +133,41 @@ TEST serves_a_second_load_from_the_cache(void) {
     PASS();
 }
 
+/* One project id and version resolved from two different repositories: the
+   second load must reach its own repository rather than being served the
+   first's manifest out of the cache. */
+TEST does_not_serve_one_repositorys_manifest_for_another(void) {
+    isolate_environment();
+    empty_the_cache();
+
+    cJSON *upstream = cJSON_Parse(
+        "{\"kind\":\"github-releases\",\"repo\":\"intisy-ai/basekit\",\"version\":\"5.0.0\"}");
+    cJSON *fork = cJSON_Parse(
+        "{\"kind\":\"github-releases\",\"repo\":\"someone-else/basekit\",\"version\":\"5.0.0\"}");
+    fr_project first;
+    fr_project second;
+    fr_error err;
+
+    BACKEND_CALLS = 0;
+    ASSERT_EQ(FR_OK, FR_SOURCE_GITHUB.load(FR_SOURCE_GITHUB.state, "intisy-ai/basekit",
+                                           upstream, ".", &first, &err));
+    ASSERT_EQ(1, BACKEND_CALLS);
+    fr_project_free(&first);
+
+    ASSERT_EQ(FR_OK, FR_SOURCE_GITHUB.load(FR_SOURCE_GITHUB.state, "intisy-ai/basekit",
+                                           fork, ".", &second, &err));
+    ASSERT_EQ(2, BACKEND_CALLS);
+    ASSERT(strstr(LAST_URL, "someone-else/basekit") != NULL);
+    fr_project_free(&second);
+
+    cJSON_Delete(upstream);
+    cJSON_Delete(fork);
+
+    empty_the_cache();
+    restore_environment();
+    PASS();
+}
+
 TEST reports_a_missing_repo_field_against_the_source_path(void) {
     isolate_environment();
 
@@ -158,6 +193,7 @@ int main(int argc, char **argv) {
     RUN_TEST(builds_the_release_asset_url_from_the_block);
     RUN_TEST(substitutes_the_version_into_a_tag_template);
     RUN_TEST(serves_a_second_load_from_the_cache);
+    RUN_TEST(does_not_serve_one_repositorys_manifest_for_another);
     RUN_TEST(reports_a_missing_repo_field_against_the_source_path);
     GREATEST_MAIN_END();
 }
