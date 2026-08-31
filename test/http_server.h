@@ -2,9 +2,10 @@
 #define FERRULE_TEST_HTTP_SERVER_H
 
 /* A loopback HTTP server for testing what the real http backends put on the
-   wire. Routes are declared before start and observations are read after stop,
-   so the accept thread owns the whole structure while it runs and none of this
-   needs a lock. */
+   wire. Routes are declared before start and observations are read after stop
+   has joined the accept thread, so that thread owns the routes for as long as
+   it runs and they need no lock. The only value crossing threads live is the
+   stop flag. */
 typedef struct fr_test_server fr_test_server;
 
 /* Binds 127.0.0.1 on a port the OS picks, so concurrent runs cannot collide.

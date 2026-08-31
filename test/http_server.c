@@ -39,6 +39,7 @@ struct fr_test_server {
     int port;
     fr_test_route routes[MAX_ROUTES];
     size_t route_count;
+    volatile int stopping;
 #ifdef _WIN32
     HANDLE thread;
 #else
@@ -164,11 +165,47 @@ static void serve_connection(fr_test_server *server, socket_handle client) {
     if (written > 0 && (size_t) written < sizeof response) send_all(client, response, (size_t) written);
 }
 
-/* Ends when stop closes the listener, which makes the blocked accept fail. */
+/* Waits for a connection with a timeout so the loop can notice that stop has
+   been asked for. Closing the listener under a blocked accept would be
+   simpler, but it wakes accept on Windows and BSD and NOT on Linux, where the
+   thread would stay blocked and the join would never return. */
+static int connection_is_waiting(socket_handle listener) {
+    fd_set readable;
+    FD_ZERO(&readable);
+    FD_SET(listener, &readable);
+
+    struct timeval timeout;
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 50000;
+
+#ifdef _WIN32
+    int count = 0;
+#else
+    int count = (int) listener + 1;
+#endif
+    return select(count, &readable, NULL, NULL, &timeout) > 0;
+}
+
+/* A client that connects and then sends nothing would otherwise hold the one
+   server thread in recv for as long as the test runs. */
+static void set_receive_timeout(socket_handle client) {
+#ifdef _WIN32
+    DWORD milliseconds = 5000;
+    setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, (const char *) &milliseconds, sizeof milliseconds);
+#else
+    struct timeval timeout;
+    timeout.tv_sec = 5;
+    timeout.tv_usec = 0;
+    setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof timeout);
+#endif
+}
+
 static void accept_loop(fr_test_server *server) {
-    for (;;) {
+    while (!server->stopping) {
+        if (!connection_is_waiting(server->listener)) continue;
         socket_handle client = accept(server->listener, NULL, NULL);
-        if (client == INVALID_SOCKET_HANDLE) return;
+        if (client == INVALID_SOCKET_HANDLE) continue;
+        set_receive_timeout(client);
         serve_connection(server, client);
         close_socket(client);
     }
@@ -251,9 +288,10 @@ void fr_test_server_start(fr_test_server *server) {
 #endif
 }
 
+/* The thread is joined BEFORE the listener closes, so it never selects on a
+   descriptor this has already closed. */
 void fr_test_server_stop(fr_test_server *server) {
-    close_socket(server->listener);
-    server->listener = INVALID_SOCKET_HANDLE;
+    server->stopping = 1;
 #ifdef _WIN32
     if (server->thread != NULL) {
         WaitForSingleObject(server->thread, 5000);
@@ -266,6 +304,10 @@ void fr_test_server_stop(fr_test_server *server) {
         server->thread_started = 0;
     }
 #endif
+    if (server->listener != INVALID_SOCKET_HANDLE) {
+        close_socket(server->listener);
+        server->listener = INVALID_SOCKET_HANDLE;
+    }
 }
 
 void fr_test_server_free(fr_test_server *server) {
