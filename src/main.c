@@ -1,7 +1,7 @@
+#include "cli.h"
 #include "sync.h"
 
 #include <stdio.h>
-#include <string.h>
 
 #define FERRULE_VERSION "0.1.0"
 
@@ -32,25 +32,21 @@ static int run(const char *manifest_path, int write, int use_cache) {
 }
 
 int main(int argc, char **argv) {
-    char *positional[3];
-    int positional_count = 0;
-    int use_cache = 1;
+    fr_cli_options options;
+    fr_cli_parse(argc, argv, &options);
 
-    for (int index = 1; index < argc; index++) {
-        if (strcmp(argv[index], "--no-cache") == 0) {
-            use_cache = 0;
-        } else if (positional_count < (int) (sizeof positional / sizeof positional[0])) {
-            positional[positional_count++] = argv[index];
-        }
+    switch (options.command) {
+        case FR_CLI_VERSION:
+            printf("ferrule %s\n", FERRULE_VERSION);
+            return 0;
+        case FR_CLI_SYNC:
+            return run(options.manifest_path, 1, options.use_cache);
+        case FR_CLI_CHECK:
+            return run(options.manifest_path, 0, options.use_cache);
+        case FR_CLI_USAGE:
+            break;
     }
 
-    const char *manifest_path = positional_count >= 2 ? positional[1] : "ferrule.json";
-    if (positional_count >= 1 && strcmp(positional[0], "--version") == 0) {
-        printf("ferrule %s\n", FERRULE_VERSION);
-        return 0;
-    }
-    if (positional_count >= 1 && strcmp(positional[0], "sync") == 0) return run(manifest_path, 1, use_cache);
-    if (positional_count >= 1 && strcmp(positional[0], "check") == 0) return run(manifest_path, 0, use_cache);
     fprintf(stderr, "usage: ferrule [--version | sync [manifest] | check [manifest]] [--no-cache]\n");
     return 2;
 }
