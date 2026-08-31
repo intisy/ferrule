@@ -1,6 +1,6 @@
 set(CORE_FILES
     resolve.c resolve.h manifest.c manifest.h registry.c registry.h
-    types.h sync.c sync.h main.c)
+    types.h sync.c sync.h main.c cli.c cli.h)
 
 set(FORBIDDEN "\"gradle\"" "\"path\"" "\"npm\"" "ferrule\\.source/[a-z]" "ferrule\\.language/[a-z]")
 
