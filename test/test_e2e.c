@@ -1,21 +1,12 @@
 #include "greatest.h"
 #include "http.h"
 #include "region.h"
+#include "support.h"
 #include "sync.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#ifdef _WIN32
-#include <direct.h>
-#define make_test_directory(path) _mkdir(path)
-#define rmdir _rmdir
-#else
-#include <sys/stat.h>
-#include <unistd.h>
-#define make_test_directory(path) mkdir(path, 0777)
-#endif
 
 static void reset_from_pristine(const char *pristine_path, const char *working_path) {
     fr_error err;
@@ -84,30 +75,16 @@ static const char *BUILD_TEMPLATE =
     "}\n";
 
 static const char *e2e_temp_root(void) {
-#ifdef _WIN32
-    const char *base = getenv("TEMP");
-    if (base == NULL) base = getenv("TMP");
-    if (base == NULL) base = "C:/Windows/Temp";
-#else
-    const char *base = getenv("TMPDIR");
-    if (base == NULL) base = "/tmp";
-#endif
     static char root[512];
-    snprintf(root, sizeof root, "%s/ferrule_test_e2e_github", base);
+    snprintf(root, sizeof root, "%s/ferrule_test_e2e_github_%d",
+             fr_test_temp_base(), fr_test_process_id());
     return root;
 }
 
 static const char *e2e_cache_root(void) {
-#ifdef _WIN32
-    const char *base = getenv("TEMP");
-    if (base == NULL) base = getenv("TMP");
-    if (base == NULL) base = "C:/Windows/Temp";
-#else
-    const char *base = getenv("TMPDIR");
-    if (base == NULL) base = "/tmp";
-#endif
     static char root[512];
-    snprintf(root, sizeof root, "%s/ferrule_test_e2e_github_cache", base);
+    snprintf(root, sizeof root, "%s/ferrule_test_e2e_github_cache_%d",
+             fr_test_temp_base(), fr_test_process_id());
     return root;
 }
 
@@ -119,41 +96,9 @@ static void copy_text_file(const char *from, const char *to) {
     free(text);
 }
 
-/* Mirrors fr_cache_path's layout for the one project/version pair this test
-   ever writes, so the entry can be removed without going through the cache
-   API (which needs FERRULE_CACHE_DIR set, and this runs both before the env
-   var is set and after it is cleared). */
-static void remove_github_cache_entry(void) {
-    const char *root = e2e_cache_root();
-    char path[700];
-
-    snprintf(path, sizeof path, "%s/intisy-ai/basekit/5.0.0/ferrule.json", root);
-    remove(path);
-    snprintf(path, sizeof path, "%s/intisy-ai/basekit/5.0.0", root);
-    rmdir(path);
-    snprintf(path, sizeof path, "%s/intisy-ai/basekit", root);
-    rmdir(path);
-    snprintf(path, sizeof path, "%s/intisy-ai", root);
-    rmdir(path);
-    rmdir(root);
-}
-
 static void remove_e2e_tree(void) {
-    const char *root = e2e_temp_root();
-    char path[700];
-
-    snprintf(path, sizeof path, "%s/path/consumer/build.gradle", root); remove(path);
-    snprintf(path, sizeof path, "%s/path/consumer/ferrule.json", root); remove(path);
-    snprintf(path, sizeof path, "%s/path/consumer", root); rmdir(path);
-    snprintf(path, sizeof path, "%s/path/producer/ferrule.json", root); remove(path);
-    snprintf(path, sizeof path, "%s/path/producer", root); rmdir(path);
-    snprintf(path, sizeof path, "%s/path", root); rmdir(path);
-    snprintf(path, sizeof path, "%s/github/build.gradle", root); remove(path);
-    snprintf(path, sizeof path, "%s/github/ferrule-github.json", root); remove(path);
-    snprintf(path, sizeof path, "%s/github", root); rmdir(path);
-    rmdir(root);
-
-    remove_github_cache_entry();
+    fr_test_remove_tree(e2e_temp_root());
+    fr_test_remove_tree(e2e_cache_root());
 }
 
 /* Two isolated copies of the same consumer, one resolved through a "path"
@@ -165,11 +110,11 @@ static void setup_e2e_tree(void) {
     char path[700];
     fr_error err;
 
-    make_test_directory(root);
-    snprintf(path, sizeof path, "%s/path", root); make_test_directory(path);
-    snprintf(path, sizeof path, "%s/path/consumer", root); make_test_directory(path);
-    snprintf(path, sizeof path, "%s/path/producer", root); make_test_directory(path);
-    snprintf(path, sizeof path, "%s/github", root); make_test_directory(path);
+    fr_test_make_directory(root);
+    snprintf(path, sizeof path, "%s/path", root); fr_test_make_directory(path);
+    snprintf(path, sizeof path, "%s/path/consumer", root); fr_test_make_directory(path);
+    snprintf(path, sizeof path, "%s/path/producer", root); fr_test_make_directory(path);
+    snprintf(path, sizeof path, "%s/github", root); fr_test_make_directory(path);
 
     snprintf(path, sizeof path, "%s/path/consumer/ferrule.json", root);
     copy_text_file("test/fixtures/consumer/ferrule.json", path);
@@ -220,12 +165,7 @@ static int github_stub_get(const char *url, const fr_http_header *headers, size_
 }
 
 static int github_cache_entry_exists(void) {
-    char path[700];
-    snprintf(path, sizeof path, "%s/intisy-ai/basekit/5.0.0/ferrule.json", e2e_cache_root());
-    FILE *probe = fopen(path, "rb");
-    if (probe == NULL) return 0;
-    fclose(probe);
-    return 1;
+    return fr_test_count_files(e2e_cache_root(), "ferrule.json") > 0;
 }
 
 TEST github_source_matches_path_source(void) {
@@ -248,22 +188,14 @@ TEST github_source_matches_path_source(void) {
     ASSERT_EQ(1, (int) path_report.count);
     fr_sync_report_free(&path_report);
 
-#ifdef _WIN32
-    _putenv_s("FERRULE_CACHE_DIR", e2e_cache_root());
-#else
-    setenv("FERRULE_CACHE_DIR", e2e_cache_root(), 1);
-#endif
+    fr_test_set_env("FERRULE_CACHE_DIR", e2e_cache_root());
     fr_http_fn original_backend = fr_http_set_backend(github_stub_get);
 
     fr_sync_report github_report;
     int github_result = fr_sync(github_manifest, 1, 1, &github_report, &err);
 
     fr_http_set_backend(original_backend);
-#ifdef _WIN32
-    _putenv_s("FERRULE_CACHE_DIR", "");
-#else
-    unsetenv("FERRULE_CACHE_DIR");
-#endif
+    fr_test_set_env("FERRULE_CACHE_DIR", NULL);
 
     ASSERT_EQ(FR_OK, github_result);
     ASSERT_EQ(1, (int) github_report.count);
@@ -305,11 +237,7 @@ TEST no_cache_bypasses_both_the_read_and_the_write(void) {
     char github_manifest[700];
     snprintf(github_manifest, sizeof github_manifest, "%s/github/ferrule-github.json", root);
 
-#ifdef _WIN32
-    _putenv_s("FERRULE_CACHE_DIR", e2e_cache_root());
-#else
-    setenv("FERRULE_CACHE_DIR", e2e_cache_root(), 1);
-#endif
+    fr_test_set_env("FERRULE_CACHE_DIR", e2e_cache_root());
     fr_http_fn original_backend = fr_http_set_backend(github_stub_get);
 
     fr_error err;
@@ -323,7 +251,7 @@ TEST no_cache_bypasses_both_the_read_and_the_write(void) {
     int calls_without_cache = GITHUB_STUB_CALLS;
     int entry_written_without_cache = github_cache_entry_exists();
 
-    remove_github_cache_entry();
+    fr_test_remove_tree(e2e_cache_root());
 
     GITHUB_STUB_CALLS = 0;
     int first_with_cache = fr_sync(github_manifest, 1, 1, &report, &err);
@@ -333,11 +261,7 @@ TEST no_cache_bypasses_both_the_read_and_the_write(void) {
     int calls_with_cache = GITHUB_STUB_CALLS;
 
     fr_http_set_backend(original_backend);
-#ifdef _WIN32
-    _putenv_s("FERRULE_CACHE_DIR", "");
-#else
-    unsetenv("FERRULE_CACHE_DIR");
-#endif
+    fr_test_set_env("FERRULE_CACHE_DIR", NULL);
 
     ASSERT_EQ(FR_OK, first_no_cache);
     ASSERT_EQ(FR_OK, second_no_cache);

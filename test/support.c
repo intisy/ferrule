@@ -1,0 +1,128 @@
+#include "support.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#ifdef _WIN32
+#include <direct.h>
+#include <process.h>
+#include <windows.h>
+#else
+#include <dirent.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+#endif
+
+const char *fr_test_temp_base(void) {
+#ifdef _WIN32
+    const char *base = getenv("TEMP");
+    if (base == NULL) base = getenv("TMP");
+    if (base == NULL) base = "C:/Windows/Temp";
+#else
+    const char *base = getenv("TMPDIR");
+    if (base == NULL) base = "/tmp";
+#endif
+    return base;
+}
+
+int fr_test_process_id(void) {
+#ifdef _WIN32
+    return _getpid();
+#else
+    return (int) getpid();
+#endif
+}
+
+int fr_test_make_directory(const char *path) {
+#ifdef _WIN32
+    return _mkdir(path);
+#else
+    return mkdir(path, 0777);
+#endif
+}
+
+typedef void (*child_visitor)(const char *child_path, int is_directory, void *state);
+
+static void for_each_child(const char *path, child_visitor visit, void *state) {
+#ifdef _WIN32
+    char pattern[1024];
+    snprintf(pattern, sizeof pattern, "%s/*", path);
+
+    WIN32_FIND_DATAA found;
+    HANDLE handle = FindFirstFileA(pattern, &found);
+    if (handle == INVALID_HANDLE_VALUE) return;
+    do {
+        if (strcmp(found.cFileName, ".") == 0 || strcmp(found.cFileName, "..") == 0) continue;
+        char child[1024];
+        snprintf(child, sizeof child, "%s/%s", path, found.cFileName);
+        visit(child, (found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0, state);
+    } while (FindNextFileA(handle, &found));
+    FindClose(handle);
+#else
+    DIR *dir = opendir(path);
+    if (dir == NULL) return;
+    const struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
+        char child[1024];
+        snprintf(child, sizeof child, "%s/%s", path, entry->d_name);
+        struct stat info;
+        if (stat(child, &info) != 0) continue;
+        visit(child, S_ISDIR(info.st_mode), state);
+    }
+    closedir(dir);
+#endif
+}
+
+static void remove_child(const char *child_path, int is_directory, void *state) {
+    (void) state;
+    if (is_directory) fr_test_remove_tree(child_path);
+    else remove(child_path);
+}
+
+/* Lets a test wipe its own private root without knowing the layout written
+   inside it, so a change to the cache path cannot leave stale entries that a
+   later test then reads as a hit. */
+void fr_test_remove_tree(const char *path) {
+    for_each_child(path, remove_child, NULL);
+#ifdef _WIN32
+    _rmdir(path);
+#else
+    rmdir(path);
+#endif
+}
+
+typedef struct {
+    const char *name;
+    int count;
+} file_counter;
+
+static void count_child(const char *child_path, int is_directory, void *state) {
+    file_counter *counter = state;
+    if (is_directory) {
+        for_each_child(child_path, count_child, state);
+        return;
+    }
+    const char *slash = strrchr(child_path, '/');
+    const char *base = slash == NULL ? child_path : slash + 1;
+    if (strcmp(base, counter->name) == 0) counter->count++;
+}
+
+int fr_test_count_files(const char *root, const char *file_name) {
+    file_counter counter;
+    counter.name = file_name;
+    counter.count = 0;
+    for_each_child(root, count_child, &counter);
+    return counter.count;
+}
+
+void fr_test_set_env(const char *name, const char *value) {
+#ifdef _WIN32
+    _putenv_s(name, value == NULL ? "" : value);
+#else
+    if (value == NULL) unsetenv(name);
+    else setenv(name, value, 1);
+#endif
+}

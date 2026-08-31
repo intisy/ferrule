@@ -1,60 +1,28 @@
 #include "greatest.h"
 #include "cache.h"
+#include "support.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef _WIN32
-#include <direct.h>
-#include <process.h>
-#define rmdir _rmdir
-#define make_test_directory(path) _mkdir(path)
-#else
-#include <sys/stat.h>
-#include <unistd.h>
-#define make_test_directory(path) mkdir(path, 0777)
-#endif
-
 /* Unique per process (not just per test) so a crash mid-test or a second CI job
    running this binary concurrently on the same machine can never share, and thus
    never contend over, another run's cache entries. */
 static const char *test_cache_root(void) {
-#ifdef _WIN32
-    const char *base = getenv("TEMP");
-    if (base == NULL) base = getenv("TMP");
-    if (base == NULL) base = "C:/Windows/Temp";
-    int pid = _getpid();
-#else
-    const char *base = getenv("TMPDIR");
-    if (base == NULL) base = "/tmp";
-    int pid = (int) getpid();
-#endif
     static char root[512];
-    snprintf(root, sizeof root, "%s/ferrule_test_cache_%d", base, pid);
+    snprintf(root, sizeof root, "%s/ferrule_test_cache_%d", fr_test_temp_base(), fr_test_process_id());
     return root;
-}
-
-static void set_cache_dir(const char *path) {
-#ifdef _WIN32
-    _putenv_s("FERRULE_CACHE_DIR", path);
-#else
-    setenv("FERRULE_CACHE_DIR", path, 1);
-#endif
-}
-
-static void clear_cache_dir(void) {
-#ifdef _WIN32
-    _putenv_s("FERRULE_CACHE_DIR", "");
-#else
-    unsetenv("FERRULE_CACHE_DIR");
-#endif
 }
 
 /* Every test points the cache at a private temp root before touching
    fr_cache_* so none of them can reach a real user cache directory. */
 static void isolate_cache_dir(void) {
-    set_cache_dir(test_cache_root());
+    fr_test_set_env("FERRULE_CACHE_DIR", test_cache_root());
+}
+
+static void clear_cache_dir(void) {
+    fr_test_set_env("FERRULE_CACHE_DIR", NULL);
 }
 
 static char *dup_or_null(const char *text) {
@@ -63,32 +31,6 @@ static char *dup_or_null(const char *text) {
     char *copy = malloc(size);
     if (copy != NULL) memcpy(copy, text, size);
     return copy;
-}
-
-/* project may itself contain one "/" (e.g. "intisy-ai/basekit"), so this
-   removes every level fr_cache_path can have created for it: the file, the
-   version directory, both project segments, and finally the root. */
-static void remove_entry_tree(const char *root, const char *project, const char *version) {
-    char path[512];
-    snprintf(path, sizeof path, "%s/%s/%s/ferrule.json", root, project, version);
-    remove(path);
-    snprintf(path, sizeof path, "%s/%s/%s", root, project, version);
-    rmdir(path);
-    snprintf(path, sizeof path, "%s/%s", root, project);
-    rmdir(path);
-
-    const char *slash = strchr(project, '/');
-    if (slash != NULL) {
-        char prefix[256];
-        size_t len = (size_t) (slash - project);
-        if (len < sizeof prefix) {
-            memcpy(prefix, project, len);
-            prefix[len] = '\0';
-            snprintf(path, sizeof path, "%s/%s", root, prefix);
-            rmdir(path);
-        }
-    }
-    rmdir(root);
 }
 
 TEST rejects_a_project_that_would_escape_the_cache_root(void) {
@@ -124,7 +66,7 @@ TEST rejects_an_oversized_cache_root_rather_than_truncating_it(void) {
     char oversized[2000];
     memset(oversized, 'x', sizeof oversized - 1);
     oversized[sizeof oversized - 1] = '\0';
-    set_cache_dir(oversized);
+    fr_test_set_env("FERRULE_CACHE_DIR", oversized);
 
     fr_error err;
     char *path = NULL;
@@ -161,12 +103,10 @@ TEST round_trips_a_written_manifest(void) {
 
     /* Proves the successful path leaves no ".tmp" sibling behind: it must
        have been renamed into place, not merely written and abandoned. */
-    char temp_path[512];
-    snprintf(temp_path, sizeof temp_path, "%s/intisy-ai/basekit/5.0.0/ferrule.json.tmp", root);
-    FILE *leftover = fopen(temp_path, "rb");
-    ASSERT(leftover == NULL);
+    ASSERT_EQ(0, fr_test_count_files(root, "ferrule.json.tmp"));
+    ASSERT_EQ(1, fr_test_count_files(root, "ferrule.json"));
 
-    remove_entry_tree(root, "intisy-ai/basekit", "5.0.0");
+    fr_test_remove_tree(root);
     clear_cache_dir();
     PASS();
 }
@@ -190,7 +130,7 @@ TEST preserves_the_existing_manifest_when_a_write_cannot_complete(void) {
 
     char blocker_path[512];
     snprintf(blocker_path, sizeof blocker_path, "%s.tmp", final_path);
-    ASSERT_EQ(0, make_test_directory(blocker_path));
+    ASSERT_EQ(0, fr_test_make_directory(blocker_path));
 
     fr_cache_write(project, version, "{\"corrupt");
 
@@ -200,9 +140,8 @@ TEST preserves_the_existing_manifest_when_a_write_cannot_complete(void) {
     ASSERT_STR_EQ("{\"good\":true}", text);
     free(text);
 
-    rmdir(blocker_path);
     free(final_path);
-    remove_entry_tree(root, "intisy-ai/atomic-guard", "1.0.0");
+    fr_test_remove_tree(root);
     clear_cache_dir();
     PASS();
 }
@@ -212,7 +151,7 @@ TEST resolves_the_localappdata_fallback_when_no_override_is_set(void) {
     clear_cache_dir();
     char *saved = dup_or_null(getenv("LOCALAPPDATA"));
 
-    _putenv_s("LOCALAPPDATA", test_cache_root());
+    fr_test_set_env("LOCALAPPDATA", test_cache_root());
 
     fr_error err;
     char *path = NULL;
@@ -223,8 +162,8 @@ TEST resolves_the_localappdata_fallback_when_no_override_is_set(void) {
     ASSERT(strstr(path, expected_prefix) == path);
     free(path);
 
-    if (saved != NULL) { _putenv_s("LOCALAPPDATA", saved); free(saved); }
-    else { _putenv_s("LOCALAPPDATA", ""); }
+    fr_test_set_env("LOCALAPPDATA", saved);
+    free(saved);
     PASS();
 }
 #else
@@ -232,7 +171,7 @@ TEST resolves_the_xdg_cache_home_fallback_when_no_override_is_set(void) {
     clear_cache_dir();
     char *saved = dup_or_null(getenv("XDG_CACHE_HOME"));
 
-    setenv("XDG_CACHE_HOME", test_cache_root(), 1);
+    fr_test_set_env("XDG_CACHE_HOME", test_cache_root());
 
     fr_error err;
     char *path = NULL;
@@ -243,8 +182,8 @@ TEST resolves_the_xdg_cache_home_fallback_when_no_override_is_set(void) {
     ASSERT(strstr(path, expected_prefix) == path);
     free(path);
 
-    if (saved != NULL) { setenv("XDG_CACHE_HOME", saved, 1); free(saved); }
-    else { unsetenv("XDG_CACHE_HOME"); }
+    fr_test_set_env("XDG_CACHE_HOME", saved);
+    free(saved);
     PASS();
 }
 #endif
