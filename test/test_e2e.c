@@ -224,6 +224,61 @@ TEST github_source_matches_path_source(void) {
     PASS();
 }
 
+/* The drift exit is what a regenerate-and-diff CI gate rests on, and it was
+   only ever proven on the "path" source. A source that fetches has more ways
+   to report nothing at all, so it is worth proving on this path too: check
+   must name the drifted file and leave it untouched, and must fall silent
+   once sync has written it. */
+TEST check_reports_drift_through_the_github_source(void) {
+    remove_e2e_tree();
+    setup_e2e_tree();
+
+    const char *root = e2e_temp_root();
+    char github_manifest[700];
+    char github_build[700];
+    snprintf(github_manifest, sizeof github_manifest, "%s/github/ferrule-github.json", root);
+    snprintf(github_build, sizeof github_build, "%s/github/build.gradle", root);
+
+    fr_test_set_env("FERRULE_CACHE_DIR", e2e_cache_root());
+    fr_http_fn original_backend = fr_http_set_backend(github_stub_get);
+
+    fr_error err;
+    fr_sync_report drifted;
+    int drift_result = fr_sync(github_manifest, 0, 1, &drifted, &err);
+
+    char *after_check = NULL;
+    fr_file_read_text(github_build, &after_check, &err);
+
+    fr_sync_report written;
+    int write_result = fr_sync(github_manifest, 1, 1, &written, &err);
+
+    fr_sync_report in_sync;
+    int in_sync_result = fr_sync(github_manifest, 0, 1, &in_sync, &err);
+
+    fr_http_set_backend(original_backend);
+    fr_test_set_env("FERRULE_CACHE_DIR", NULL);
+
+    ASSERT_EQ(FR_OK, drift_result);
+    ASSERT_EQ(1, (int) drifted.count);
+    ASSERT(strstr(drifted.files[0], "build.gradle") != NULL);
+    fr_sync_report_free(&drifted);
+
+    ASSERT(after_check != NULL);
+    ASSERT_STR_EQ(BUILD_TEMPLATE, after_check);
+    free(after_check);
+
+    ASSERT_EQ(FR_OK, write_result);
+    ASSERT_EQ(1, (int) written.count);
+    fr_sync_report_free(&written);
+
+    ASSERT_EQ(FR_OK, in_sync_result);
+    ASSERT_EQ(0, (int) in_sync.count);
+    fr_sync_report_free(&in_sync);
+
+    remove_e2e_tree();
+    PASS();
+}
+
 /* --no-cache must bypass both sides of the cache, not just the read: a test
    that only counted fetches would still pass if the write leaked and later
    contaminated a cached run. Each phase starts from a removed cache entry so
@@ -284,6 +339,7 @@ int main(int argc, char **argv) {
     RUN_TEST(the_second_run_changes_nothing);
     RUN_TEST(check_names_every_drifted_consumer);
     RUN_TEST(github_source_matches_path_source);
+    RUN_TEST(check_reports_drift_through_the_github_source);
     RUN_TEST(no_cache_bypasses_both_the_read_and_the_write);
     GREATEST_MAIN_END();
 }
