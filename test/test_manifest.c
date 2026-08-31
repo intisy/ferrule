@@ -86,6 +86,18 @@ TEST keeps_a_source_block_of_any_kind(void) {
     PASS();
 }
 
+/* A language block is looked up by name in the module entry, which also holds
+   the keys the core reads. A consumer naming its language after one of those
+   would otherwise resolve to the core's own value. */
+TEST rejects_a_consumer_language_that_names_a_reserved_module_key(void) {
+    fr_manifest manifest; fr_error err;
+    ASSERT_EQ(FR_ERR, fr_manifest_read("test/fixtures/consumer-reserved-language/ferrule.json",
+                                       &manifest, &err));
+    ASSERT(strstr(err.message, "reserved") != NULL);
+    ASSERT(strstr(err.message, "requires") != NULL);
+    PASS();
+}
+
 TEST rejects_an_unknown_schema(void) {
     fr_project project; fr_error err;
     ASSERT_EQ(FR_ERR, fr_project_read("test/fixtures/bad-schema/ferrule.json", &project, &err));
@@ -103,6 +115,7 @@ int main(int argc, char **argv) {
     RUN_TEST(returns_null_for_an_unknown_module);
     RUN_TEST(reads_a_consumer);
     RUN_TEST(keeps_a_source_block_of_any_kind);
+    RUN_TEST(rejects_a_consumer_language_that_names_a_reserved_module_key);
     RUN_TEST(rejects_an_unknown_schema);
     GREATEST_MAIN_END();
 }

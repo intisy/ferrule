@@ -58,6 +58,19 @@ static int check_schema(const cJSON *root, const char *file_path, fr_error *err)
     return FR_OK;
 }
 
+/* A module entry carries its language blocks beside the keys the core reads
+   from that same entry, so a language may not be named after one: the lookup
+   would find the core's own value instead of a language block. */
+static const char *RESERVED_MODULE_KEYS[] = { "requires" };
+
+static int is_reserved_module_key(const char *name) {
+    size_t count = sizeof RESERVED_MODULE_KEYS / sizeof RESERVED_MODULE_KEYS[0];
+    for (size_t index = 0; index < count; index++) {
+        if (strcmp(RESERVED_MODULE_KEYS[index], name) == 0) return 1;
+    }
+    return 0;
+}
+
 static int read_module(const cJSON *entry, const char *name, fr_module *out, fr_error *err) {
     memset(out, 0, sizeof *out);
     char path[256];
@@ -165,6 +178,10 @@ static int read_consumer(const cJSON *entry, size_t consumer_index, fr_consumer 
 
     const char *language = NULL;
     if (fr_json_string(entry, "language", path, &language, err) != FR_OK) return FR_ERR;
+    if (is_reserved_module_key(language)) {
+        fr_error_set(err, "%s.language \"%s\" is a reserved module key", path, language);
+        return FR_ERR;
+    }
     out->language = duplicate(language);
     if (out->language == NULL) {
         fr_error_set(err, "out of memory reading %s.language", path);
