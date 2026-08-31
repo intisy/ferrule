@@ -2,7 +2,9 @@
 
 #include "cache.h"
 #include "error.h"
+#include "lang_c.h"
 #include "lang_gradle.h"
+#include "lang_npm.h"
 #include "manifest.h"
 #include "region.h"
 #include "registry.h"
@@ -43,7 +45,17 @@ static void wrap_error_with_path(fr_error *err, const char *path) {
     fr_error_set(err, "%s: %s", path, original);
 }
 
+/* On success it takes ownership even when it stores nothing: two consumers can
+   target one file, and a report naming it twice would have main.c count one
+   changed file as two. */
 static int report_adopt(fr_sync_report *report, char *path, fr_error *err) {
+    for (size_t index = 0; index < report->count; index++) {
+        if (strcmp(report->files[index], path) == 0) {
+            free(path);
+            return FR_OK;
+        }
+    }
+
     char **files = realloc(report->files, (report->count + 1) * sizeof *files);
     if (files == NULL) {
         fr_error_set(err, "out of memory recording \"%s\"", path);
@@ -69,6 +81,14 @@ static int build_registry(fr_registry **out, fr_error *err) {
         return FR_ERR;
     }
     if (fr_registry_add_language(registry, &FR_LANGUAGE_GRADLE, err) != FR_OK) {
+        fr_registry_destroy(registry);
+        return FR_ERR;
+    }
+    if (fr_registry_add_language(registry, &FR_LANGUAGE_NPM, err) != FR_OK) {
+        fr_registry_destroy(registry);
+        return FR_ERR;
+    }
+    if (fr_registry_add_language(registry, &FR_LANGUAGE_C, err) != FR_OK) {
         fr_registry_destroy(registry);
         return FR_ERR;
     }

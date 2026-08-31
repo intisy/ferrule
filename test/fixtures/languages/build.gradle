@@ -1,0 +1,5 @@
+dependencies {
+    // ferrule:begin
+    // ferrule:end
+    testImplementation "junit"
+}

@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "project": "intisy-ai/example",
+  "version": "1.0.0",
+  "modules": {},
+  "sources": {
+    "intisy-ai/basekit": { "kind": "path", "path": "../producer-languages" }
+  },
+  "consumers": [
+    {
+      "id": "runtime",
+      "language": "npm",
+      "file": "package.json",
+      "configuration": "dependencies",
+      "dependencies": {
+        "intisy-ai/basekit": { "version": "^5.0.0", "modules": ["ir"] }
+      }
+    },
+    {
+      "id": "tooling",
+      "language": "npm",
+      "file": "package.json",
+      "configuration": "devDependencies",
+      "dependencies": {
+        "intisy-ai/basekit": { "version": "^5.0.0", "modules": ["contracts"] }
+      }
+    }
+  ]
+}
