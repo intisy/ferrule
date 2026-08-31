@@ -295,7 +295,10 @@ int fr_project_parse(const char *text, const char *origin, fr_project *out, fr_e
     return FR_OK;
 }
 
+/* Initialised up front, not only by fr_project_parse further down, so that
+   *out is safe to inspect and to free however early this fails. */
 int fr_project_read(const char *file_path, fr_project *out, fr_error *err) {
+    memset(out, 0, sizeof *out);
     char *text = NULL;
     if (fr_file_read_text(file_path, &text, err) != FR_OK) return FR_ERR;
     int result = fr_project_parse(text, file_path, out, err);
